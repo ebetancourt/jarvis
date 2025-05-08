@@ -9,6 +9,20 @@ from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
+import json
+from datetime import datetime
+
+# Prompt template for both chain and logging
+prompt_template = """You are a helpful assistant that answers questions based on the
+provided context from the user's notes. Use the context to provide accurate and
+relevant answers. If the context doesn't contain enough information to answer the
+question, say so.
+
+Context: {context}
+
+Question: {question}
+
+Answer:"""
 
 # Set TOKENIZERS_PARALLELISM to false to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -35,17 +49,6 @@ def create_chain():
     """Create a chain that combines retrieval and generation."""
     db = load_db()
     retriever = db.as_retriever(search_kwargs={"k": 5})
-
-    prompt_template = """You are a helpful assistant that answers questions based on the
-    provided context from the user's notes. Use the context to provide accurate and
-    relevant answers. If the context doesn't contain enough information to answer the
-    question, say so.
-
-    Context: {context}
-
-    Question: {question}
-
-    Answer:"""
 
     prompt = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
@@ -123,14 +126,39 @@ def main():
         print("\nAnswer:")
         print(result["result"])
 
-        # Print sources
-        print("\nSources:")
+        # Prepare sources (de-duplicated)
+        seen = set()
+        unique_sources = []
         for doc in result["source_documents"]:
             if isinstance(doc, Document):
                 source = doc.metadata.get("source", "Unknown source")
             else:
                 source = format_source(doc)
+            if source not in seen:
+                seen.add(source)
+                unique_sources.append(source)
+
+        # Print sources
+        print("\nSources:")
+        for source in unique_sources:
             print(f"- {source}")
+
+        # Log to query_log.json
+        log_entry = {
+            "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "query": args.question,
+            "prompt": prompt_template.format(
+                context="\n\n".join(
+                    [doc.page_content for doc in result["source_documents"]]
+                ),
+                question=args.question,
+            ),
+            "response": result["result"],
+            "sources": unique_sources,
+        }
+        with open("query_log.json", "a") as log_file:
+            log_file.write(json.dumps(log_entry, indent=2))
+            log_file.write("\n\n")
 
     except Exception as e:
         print(f"Error: {str(e)}")

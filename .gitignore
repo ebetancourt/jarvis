@@ -35,6 +35,7 @@ env/
 # Project specific
 chroma_db/
 settings.yml
+query_log.json
 
 # Logs
 *.log
