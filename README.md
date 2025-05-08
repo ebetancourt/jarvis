@@ -1,6 +1,40 @@
-# Obsidian Notes Indexer
+# All purpose personal assistant, indexes various knowledge bases and uses LLM to generate an answer
 
-This project indexes your Obsidian notes using LangChain and stores them in a Chroma AI database for efficient searching and retrieval.
+This project indexes your data sources using LangChain and stores them in a Chroma AI database for efficient searching and retrieval.
+
+This is being constructed iteratively, starting small. So far, it indexes:
+
+- Your Obsidian notes
+
+Knowledge Sources on the list:
+
+- [x] Obsidian Notes
+- [ ] GMail
+- [ ] Google Calendar
+- [ ] Manually managed memories
+- [ ] Google Docs
+- [ ] Screenpipe recordings
+- [ ] Web Browsing history
+- [ ] Limitless and Bee.computer AI wearable audio recordings
+- [ ] Slack
+- [ ] Discord
+- [ ] WhatsApp
+- [ ] iMessage
+- [ ] Timing computer usage recording
+- [ ] GitHub Activity
+- [ ] Apple Health
+- [ ] Social Media Activity
+- [ ] Journal Entries (Day One?)
+
+Also plan to add tools (MCP?) to
+
+- [ ] Manage Tasks and Projects (Todoist)
+- [ ] Manage Calendar entries
+- [ ] Draft email messages
+- [ ] Create Reminders
+- [ ] Set Timers and alarms
+
+As soon as we have some more useful items, it would be great to get Daily summaries from JARVIS
 
 ## Setup
 
