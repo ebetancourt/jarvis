@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import argparse
 import os
-from pathlib import Path
 import yaml
 from dotenv import load_dotenv
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+from langchain.schema import Document
+
+# Set TOKENIZERS_PARALLELISM to false to avoid warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def load_settings():
@@ -81,6 +84,15 @@ def get_api_key():
     return None
 
 
+def format_source(source):
+    """Format the source path to be more readable."""
+    if isinstance(source, str):
+        return source
+    elif isinstance(source, dict):
+        return source.get("source", "Unknown source")
+    return "Unknown source"
+
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(
@@ -114,10 +126,18 @@ def main():
         # Print sources
         print("\nSources:")
         for doc in result["source_documents"]:
-            print(f'- {doc.metadata["source"]}')
+            if isinstance(doc, Document):
+                source = doc.metadata.get("source", "Unknown source")
+            else:
+                source = format_source(doc)
+            print(f"- {source}")
 
     except Exception as e:
         print(f"Error: {str(e)}")
+        import traceback
+
+        print("\nDetailed error:")
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":
