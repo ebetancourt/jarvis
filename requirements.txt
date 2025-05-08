@@ -11,3 +11,4 @@ unstructured[md]==0.17.2
 black==24.2.0
 flake8==7.0.0
 python-dotenv==1.0.1
+xxhash==3.4.1

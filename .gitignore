@@ -36,6 +36,7 @@ env/
 chroma_db/
 settings.yml
 query_log.json
+index_tracker.sqlite3
 
 # Logs
 *.log

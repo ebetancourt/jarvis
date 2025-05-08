@@ -43,4 +43,18 @@ class VectorStore:
     def as_retriever(self, **kwargs):
         if self.db is None:
             raise ValueError("Vector store is not loaded.")
+        # Add a default filter to exclude deleted items
+        filter_func = kwargs.pop("filter_func", None)
+
+        def not_deleted_filter(doc):
+            return not doc.metadata.get("deleted", False)
+
+        if filter_func:
+
+            def combined_filter(doc):
+                return not_deleted_filter(doc) and filter_func(doc)
+
+            kwargs["filter_func"] = combined_filter
+        else:
+            kwargs["filter_func"] = not_deleted_filter
         return self.db.as_retriever(**kwargs)
