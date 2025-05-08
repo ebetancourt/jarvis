@@ -28,7 +28,11 @@ def load_documents(notes_path: str) -> List[Document]:
     for i, file_path in enumerate(glob.glob(pattern, recursive=True), 1):
         try:
             loader = TextLoader(file_path, encoding="utf-8")
-            documents.extend(loader.load())
+            loaded_docs = loader.load()
+            # Add source metadata to each document
+            for doc in loaded_docs:
+                doc.metadata["source"] = "obsidian"
+            documents.extend(loaded_docs)
             print(f"[{i}/{total_files}] Loaded: {file_path}")
         except Exception as e:
             print(f"Error loading {file_path}: {str(e)}")
