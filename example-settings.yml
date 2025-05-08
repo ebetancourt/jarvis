@@ -1,0 +1,12 @@
+# Path to your Obsidian vault
+# Replace this with the path to your Obsidian notes directory
+obsidian_notes_path: /path/to/your/obsidian/vault
+
+# Optional: Configure chunk size and overlap for text splitting
+# These are the default values used in index_notes.py
+# chunk_size: 1000
+# chunk_overlap: 200
+
+# Optional: Configure the embedding model
+# This is the default model used in index_notes.py
+# embedding_model: sentence-transformers/all-mpnet-base-v2
