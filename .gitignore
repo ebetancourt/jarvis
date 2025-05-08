@@ -43,3 +43,7 @@ index_tracker.sqlite3
 
 # Environment variables
 .env
+
+# OAuth2 credentials and tokens
+client_secret.json
+token.json
