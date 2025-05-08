@@ -3,14 +3,13 @@ import argparse
 import os
 import yaml
 from dotenv import load_dotenv
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
 import json
 from datetime import datetime
+from vector_store import VectorStore
 
 # Prompt template for both chain and logging
 prompt_template = """You are a helpful assistant that answers questions based on the
@@ -35,20 +34,22 @@ def load_settings():
 
 
 def load_db():
-    """Load the Chroma database with embeddings."""
+    """Load the vector store with embeddings."""
     settings = load_settings()
-    embeddings = HuggingFaceEmbeddings(
-        model_name=settings.get(
+    vector_store = VectorStore(
+        persist_directory="./chroma_db",
+        embedding_model=settings.get(
             "embedding_model", "sentence-transformers/all-mpnet-base-v2"
-        )
+        ),
     )
-    return Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+    vector_store.load()
+    return vector_store
 
 
 def create_chain():
     """Create a chain that combines retrieval and generation."""
-    db = load_db()
-    retriever = db.as_retriever(search_kwargs={"k": 5})
+    vector_store = load_db()
+    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
     prompt = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]

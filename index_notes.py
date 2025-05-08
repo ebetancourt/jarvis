@@ -5,8 +5,7 @@ from typing import List
 import glob
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from vector_store import VectorStore
 from langchain.schema import Document
 
 # Set TOKENIZERS_PARALLELISM to false to avoid warnings
@@ -63,21 +62,16 @@ def main():
     chunks = text_splitter.split_documents(documents)
     print(f"Created {len(chunks)} chunks")
 
-    # Initialize embeddings
-    print("Initializing embeddings...")
-    embeddings = HuggingFaceEmbeddings(
-        model_name=settings.get(
-            "embedding_model", "sentence-transformers/all-mpnet-base-v2"
-        )
-    )
-
-    # Create and persist the database
-    print("Creating Chroma database...")
-    return Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
+    # Initialize vector store
+    print("Initializing vector store...")
+    vector_store = VectorStore(
         persist_directory="./chroma_db",
+        embedding_model=settings.get(
+            "embedding_model", "sentence-transformers/all-mpnet-base-v2"
+        ),
     )
+    vector_store.from_documents(chunks)
+    print("Database created successfully!")
 
 
 if __name__ == "__main__":
