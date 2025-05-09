@@ -58,3 +58,23 @@ class VectorStore:
         else:
             kwargs["filter_func"] = not_deleted_filter
         return self.db.as_retriever(**kwargs)
+
+    def get_notes_retriever(self, **kwargs):
+        """Return a retriever that only searches notes (source == 'obsidian')."""
+
+        def notes_filter(doc):
+            return doc.metadata.get("source") == "obsidian" and not doc.metadata.get(
+                "deleted", False
+            )
+
+        return self.as_retriever(filter_func=notes_filter, **kwargs)
+
+    def get_gmail_retriever(self, **kwargs):
+        """Return a retriever that only searches Gmail (source == 'Gmail')."""
+
+        def gmail_filter(doc):
+            return doc.metadata.get("source") == "Gmail" and not doc.metadata.get(
+                "deleted", False
+            )
+
+        return self.as_retriever(filter_func=gmail_filter, **kwargs)

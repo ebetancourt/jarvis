@@ -1,0 +1,6 @@
+---
+description: use this rule when testing google integrations
+globs:
+alwaysApply: false
+---
+When testing Google integrations, use the email account "elliot.betancourt@hipdotmedia.com"

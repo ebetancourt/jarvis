@@ -10,6 +10,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
 from vector_store import VectorStore
 from langchain.schema import Document
+from gmail_auth import GmailAuth
 
 # Set TOKENIZERS_PARALLELISM to false to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -117,6 +118,36 @@ def load_documents(notes_path: str, conn) -> List[Document]:
     return documents
 
 
+def load_gmail_documents(source_id: str, conn) -> List[Document]:
+    """Fetch and prepare Gmail messages from the last week for indexing."""
+    gmail_auth = GmailAuth()
+    email_address = gmail_auth.get_user_email(source_id)
+    messages = gmail_auth.fetch_recent_messages(source_id, days=7)
+    documents = []
+    for msg in messages:
+        # Extract subject and snippet for content
+        headers = {
+            h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])
+        }
+        subject = headers.get("Subject", "")
+        snippet = msg.get("snippet", "")
+        body = subject + "\n" + snippet
+        doc = Document(
+            page_content=body,
+            metadata={
+                "source": "Gmail",
+                "bucket": email_address,
+                "item": msg["id"],
+                "deleted": False,
+                "subject": subject,
+                "snippet": snippet,
+                "internalDate": msg.get("internalDate"),
+            },
+        )
+        documents.append(doc)
+    return documents
+
+
 def main():
     # Load settings
     settings = load_settings()
@@ -139,6 +170,14 @@ def main():
         print(f"Marked deleted: {item}")
     # Load and index new/changed files
     documents = load_documents(notes_path, conn)
+    # --- Gmail indexing ---
+    gmail_auth = GmailAuth()
+    gmail_accounts = gmail_auth.list_gmail_accounts()
+    for email_address in gmail_accounts:
+        print(f"Fetching Gmail messages for {email_address}...")
+        gmail_docs = load_gmail_documents(email_address, conn)
+        print(f"Loaded {len(gmail_docs)} Gmail messages for {email_address}")
+        documents.extend(gmail_docs)
     print(f"Loaded {len(documents)} new or changed documents")
     if not documents:
         print("No new or changed documents to index.")
