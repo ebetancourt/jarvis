@@ -4,12 +4,12 @@ lint:
 	black . --target-version py311 && flake8 .
 
 test:
-	coverage run -m pytest tests
+	coverage run --source=. -m pytest tests
 	coverage report
 	coverage xml
 
 coverage:
-	coverage run -m pytest tests
+	coverage run --source=. -m pytest tests
 	coverage report
 	coverage html
 	coverage xml
