@@ -63,13 +63,15 @@ def agent_query(question: str):
             "sources": gmail_result.get("source_documents", []),
         }
     else:
-        # Default: try both
+        # Default: try both, but if both are empty, return fallback message
         notes_result = search_notes(question)
         gmail_result = search_gmail(question)
         combined_result = f"{notes_result['result']}\n{gmail_result['result']}"
         combined_sources = list(notes_result.get("source_documents", [])) + list(
             gmail_result.get("source_documents", [])
         )
+        if not combined_result.strip():
+            return {"result": "Sorry, I could not route your query.", "sources": []}
         return {
             "result": combined_result,
             "sources": combined_sources,
