@@ -1,5 +1,7 @@
 # All purpose personal assistant, indexes various knowledge bases and uses LLM to generate an answer
 
+[![codecov](https://codecov.io/gh/ebetancourt/jarvis/branch/main/graph/badge.svg?token=MQMLQV473Z)](https://codecov.io/gh/ebetancourt/jarvis)
+
 This project indexes your data sources using LangChain and stores them in a Chroma AI database for efficient searching and retrieval.
 
 This is being constructed iteratively, starting small. So far, it indexes:
