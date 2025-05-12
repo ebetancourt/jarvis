@@ -7,3 +7,39 @@ extend-exclude = '''
 # in the root of the project.
 ^/venv/
 '''
+
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "All purpose personal assistant, indexes various knowledge bases and uses LLM to generate an answer"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.1.12",
+    "langchain-community>=0.0.28",
+    "langchain-huggingface>=0.2.0",
+    "langchain-openai>=0.0.8",
+    "langchain-chroma>=0.2.3",
+    "langgraph>=0.0.27",
+    "chromadb==0.4.24",
+    "pyyaml==6.0.2",
+    "sentence-transformers>=2.6.0",
+    "unstructured[md]==0.17.2",
+    "black==24.2.0",
+    "flake8==7.0.0",
+    "python-dotenv==1.0.1",
+    "xxhash==3.4.1",
+    "google-api-python-client==2.118.0",
+    "google-auth==2.28.1",
+    "google-auth-oauthlib==1.2.0",
+    "google-auth-httplib2==0.2.0",
+    "platformdirs>=4.2.0",
+    "coverage",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "coverage",
+    "black",
+    "flake8",
+]

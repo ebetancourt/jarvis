@@ -2,6 +2,8 @@
 
 [![codecov](https://codecov.io/gh/ebetancourt/jarvis/branch/main/graph/badge.svg?token=MQMLQV473Z)](https://codecov.io/gh/ebetancourt/jarvis)
 
+This project now uses [PDM](https://pdm.fming.dev/) for modern Python dependency and environment management.
+
 This project indexes your data sources using LangChain and stores them in a Chroma AI database for efficient searching and retrieval.
 
 This is being constructed iteratively, starting small. So far, it indexes:
@@ -40,16 +42,16 @@ As soon as we have some more useful items, it would be great to get Daily summar
 
 ## Setup
 
-1. Create a Python virtual environment and activate it:
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
+1. **Install PDM** (if you don't have it):
+   ```bash
+   pip install pdm
+   ```
 
-2. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
+2. **Install dependencies:**
+   ```bash
+   pdm install
+   ```
+   This will create a `.venv` and install all dependencies from `pyproject.toml`.
 
 3. Configure the path to your Obsidian notes:
    - Copy `example-settings.yml` to `settings.yml`
@@ -60,33 +62,51 @@ obsidian_notes_path: /path/to/your/obsidian/notes
 
 ## Usage
 
-Run the indexer script to process your notes:
-```bash
-python index_notes.py
-```
+- **Run the indexer script:**
+  ```bash
+  pdm run python index_notes.py
+  ```
 
-This will:
-1. Load all markdown files from your Obsidian notes directory
-2. Split them into manageable chunks
-3. Create embeddings using HuggingFace's sentence transformers
-4. Store the embeddings in a Chroma database in the `./chroma_db` directory
+- **Run tests:**
+  ```bash
+  pdm run make test
+  # or for coverage:
+  pdm run make coverage
+  ```
+  Coverage HTML report will be in `htmlcov/index.html`.
 
-The indexed notes can then be used for semantic search and other AI-powered operations.
+- **Add dependencies:**
+  ```bash
+  pdm add <package>
+  # For dev dependencies:
+  pdm add --dev <package>
+  ```
+
+- **Activate the environment manually (optional):**
+  ```bash
+  pdm venv activate
+  ```
+
+## Continuous Integration
+
+- All tests and coverage are run on every commit and pull request via GitHub Actions using PDM.
+- Coverage is uploaded to Codecov and a badge can be added to the top of this README.
+
+## Old Setup (no longer needed)
+- You do **not** need to use `requirements.txt`, `venv`, or `pip install` directly.
+- All dependency management is now handled by PDM and `pyproject.toml`.
+
+## Project Features
+
+- Indexes your Obsidian notes
+- Indexes Gmail (and more sources planned)
+- Uses LangChain, ChromaDB, and modern LLM tools
 
 ## Code Style
 
-This project uses Black for code formatting and Flake8 for linting. To format your code:
+- Run linting with:
+  ```bash
+  pdm run make lint
+  ```
 
-```bash
-black .
-```
-
-To check for code style issues:
-
-```bash
-flake8 .
-```
-
-The configuration for these tools can be found in:
-- `pyproject.toml` - Black configuration
-- `.flake8` - Flake8 configuration
+The indexed notes can then be used for semantic search and other AI-powered operations.
