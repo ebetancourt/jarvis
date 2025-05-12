@@ -4,7 +4,7 @@ load_dotenv()
 
 import argparse
 import sys
-from agent_query import agent_query
+from core.agent_query import agent_query
 
 def format_source(source):
     # If it's a Document object with metadata, extract info

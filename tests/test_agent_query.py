@@ -5,17 +5,18 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import pytest
 from unittest.mock import patch, MagicMock
+from core.agent_query import agent_query
 
 # We'll assume agent_query.py will expose a function agent_query(question: str)
 # that returns a dict with 'result' and 'sources'.
 
 
 def patch_agent_query_tools(monkeypatch, notes_return, gmail_return, agent_return):
-    monkeypatch.setattr("agent_query.search_notes", lambda q: notes_return)
-    monkeypatch.setattr("agent_query.search_gmail", lambda q: gmail_return)
+    monkeypatch.setattr("core.agent_query.search_notes", lambda q: notes_return)
+    monkeypatch.setattr("core.agent_query.search_gmail", lambda q: gmail_return)
     agent = MagicMock()
     agent.invoke.return_value = agent_return
-    monkeypatch.setattr("agent_query.create_agent", lambda: agent)
+    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
 
 
 def test_notes_only_query(monkeypatch):
@@ -25,7 +26,7 @@ def test_notes_only_query(monkeypatch):
         {"result": "", "source_documents": []},
         {"tool": "search_notes", "query": "What is in my notes?"},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("What is in my notes?")
     assert "notes answer" in result["result"]
@@ -39,7 +40,7 @@ def test_gmail_only_query(monkeypatch):
         {"result": "gmail answer", "source_documents": ["email1"]},
         {"tool": "search_gmail", "query": "What emails did I get?"},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("What emails did I get?")
     assert "gmail answer" in result["result"]
@@ -53,7 +54,7 @@ def test_ambiguous_query_calls_both(monkeypatch):
         {"result": "gmail info", "source_documents": ["email2"]},
         {"tool": "both", "query": "What did I write or receive about project X?"},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("What did I write or receive about project X?")
     assert "notes info" in result["result"]
@@ -69,7 +70,7 @@ def test_unknown_tool(monkeypatch):
         {"result": "", "source_documents": []},
         {"tool": "unknown_tool", "query": "???"},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("What is this?")
     assert "could not route" in result["result"]
@@ -83,7 +84,7 @@ def test_malformed_agent_response(monkeypatch):
         {"result": "", "source_documents": []},
         {"not_tool": "oops"},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("Malformed?")
     assert "could not route" in result["result"]
@@ -91,29 +92,29 @@ def test_malformed_agent_response(monkeypatch):
 
 
 def test_search_notes_raises_exception(monkeypatch):
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     def raise_exc(q):
         raise Exception("notes error")
 
-    monkeypatch.setattr("agent_query.search_notes", raise_exc)
+    monkeypatch.setattr("core.agent_query.search_notes", raise_exc)
     agent = MagicMock()
     agent.invoke.return_value = {"tool": "search_notes", "query": "fail"}
-    monkeypatch.setattr("agent_query.create_agent", lambda: agent)
+    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
     with pytest.raises(Exception):
         agent_query("fail")
 
 
 def test_search_gmail_raises_exception(monkeypatch):
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     def raise_exc(q):
         raise Exception("gmail error")
 
-    monkeypatch.setattr("agent_query.search_gmail", raise_exc)
+    monkeypatch.setattr("core.agent_query.search_gmail", raise_exc)
     agent = MagicMock()
     agent.invoke.return_value = {"tool": "search_gmail", "query": "fail"}
-    monkeypatch.setattr("agent_query.create_agent", lambda: agent)
+    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
     with pytest.raises(Exception):
         agent_query("fail")
 
@@ -125,7 +126,7 @@ def test_both_tools_with_overlapping_sources(monkeypatch):
         {"result": "gmail info", "source_documents": ["shared.md", "email3"]},
         {"tool": "both", "query": "Show me everything about shared.md"},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("Show me everything about shared.md")
     assert "notes info" in result["result"]
@@ -142,7 +143,7 @@ def test_empty_string_query(monkeypatch):
         {"result": "", "source_documents": []},
         {"tool": "search_notes", "query": ""},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query("")
     assert "result" in result
@@ -155,7 +156,7 @@ def test_none_query(monkeypatch):
         {"result": "", "source_documents": []},
         {"tool": "search_notes", "query": None},
     )
-    from agent_query import agent_query
+    from core.agent_query import agent_query
 
     result = agent_query(None)
     assert "result" in result
