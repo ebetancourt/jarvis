@@ -1,4 +1,4 @@
-from gmail_auth import GmailAuth
+from common.google_auth import GmailAuth
 
 
 def main():

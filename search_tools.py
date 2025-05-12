@@ -2,7 +2,7 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from vector_store import VectorStore
+from common.vector_store import VectorStore
 
 prompt_template = (
     "You are a helpful assistant that answers questions based on the "

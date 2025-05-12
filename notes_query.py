@@ -9,7 +9,7 @@ from langchain.prompts import PromptTemplate
 from langchain.schema import Document
 import json
 from datetime import datetime
-from vector_store import VectorStore
+from common.vector_store import VectorStore
 
 # Prompt template for both chain and logging
 prompt_template = """You are a helpful assistant that answers questions based on the

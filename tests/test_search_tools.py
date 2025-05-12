@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import pytest
 from unittest.mock import patch, MagicMock
-from vector_store import VectorStore
+from common.vector_store import VectorStore
 import search_tools
 from langchain.schema import Document
 

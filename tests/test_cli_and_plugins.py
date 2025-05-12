@@ -13,10 +13,8 @@ def test_jarvis_cli_runs():
     assert result.returncode == 0
     assert "Answer:" in result.stdout
 
-@pytest.mark.xfail(reason="plugins.obsidian not yet implemented")
 def test_import_plugins_obsidian():
     importlib.import_module("plugins.obsidian")
 
-@pytest.mark.xfail(reason="plugins.gmail not yet implemented")
 def test_import_plugins_gmail():
     importlib.import_module("plugins.gmail")

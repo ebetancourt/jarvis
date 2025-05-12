@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import tempfile
 import shutil
 import pytest
@@ -17,9 +16,10 @@ def temp_notes_dir():
 def test_load_documents_indexes_note(temp_notes_dir):
     with tempfile.NamedTemporaryFile(suffix=".sqlite3") as tf:
         os.environ["JARVIS_SQLITE_DB"] = tf.name
-        import index_notes  # Import after setting env var
-        conn = index_notes.init_db()
-        docs = index_notes.load_documents(temp_notes_dir, conn)
+        from common.db_utils import init_db
+        from plugins.obsidian.indexer import index_obsidian
+        conn = init_db()
+        docs = index_obsidian(temp_notes_dir, conn)
         assert len(docs) > 0
         c = conn.cursor()
         c.execute("SELECT * FROM file_index WHERE source='obsidian'")
@@ -32,11 +32,12 @@ def test_load_documents_indexes_note(temp_notes_dir):
 def test_load_gmail_documents_indexes_email(monkeypatch):
     with tempfile.NamedTemporaryFile(suffix=".sqlite3") as tf:
         os.environ["JARVIS_SQLITE_DB"] = tf.name
-        import index_notes  # Import after setting env var
+        from common.db_utils import init_db
+        from plugins.gmail.indexer import index_gmail
         # Mock GmailAuth and fetch_recent_messages
         class DummyGmailAuth:
-            def get_user_email(self, source_id):
-                return "test@example.com"
+            def list_gmail_accounts(self):
+                return ["test@example.com"]
             def fetch_recent_messages(self, source_id, days=365, max_results=1000):
                 return [{
                     "id": "email1",
@@ -44,9 +45,9 @@ def test_load_gmail_documents_indexes_email(monkeypatch):
                     "snippet": "This is a test email.",
                     "internalDate": "2024-01-01T00:00:00Z"
                 }]
-        monkeypatch.setattr("index_notes.GmailAuth", DummyGmailAuth)
-        conn = index_notes.init_db()
-        docs = index_notes.load_gmail_documents("dummy_id", conn)
+        monkeypatch.setattr("plugins.gmail.indexer.GmailAuth", DummyGmailAuth)
+        conn = init_db()
+        docs = index_gmail(conn, gmail_auth=DummyGmailAuth())
         assert len(docs) == 1
         c = conn.cursor()
         c.execute("SELECT * FROM file_index WHERE source='gmail'")
