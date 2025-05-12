@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: pdm install
       - name: Run tests with coverage
-        run: pdm run make coverage
+        run: pdm run make ci
       - name: Upload coverage report artifact
         uses: actions/upload-artifact@v4
         with:

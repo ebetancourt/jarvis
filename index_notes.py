@@ -18,7 +18,8 @@ from gmail_auth import GmailAuth
 # Set TOKENIZERS_PARALLELISM to false to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-SQLITE_DB = "index_tracker.sqlite3"
+# Allow DB path override for testing
+SQLITE_DB = os.environ.get("JARVIS_SQLITE_DB", "index_tracker.sqlite3")
 
 
 # --- SQLite Helper ---

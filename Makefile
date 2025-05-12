@@ -1,9 +1,12 @@
-.PHONY: lint test coverage
+.PHONY: lint test ci coverage
 
 lint:
 	black . --target-version py311 && flake8 .
 
 test:
+	pytest tests
+
+ci:
 	coverage run --source=. -m pytest tests
 	coverage report
 	coverage xml
