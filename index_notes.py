@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import yaml
 from typing import List
@@ -30,10 +33,21 @@ def init_db():
             hash TEXT,
             created_at TEXT,
             updated_at TEXT,
-            deleted INTEGER DEFAULT 0
+            deleted INTEGER DEFAULT 0,
+            account TEXT,
+            item_date TEXT
         )
         """
     )
+    # Try to add columns if they don't exist (for upgrades)
+    try:
+        c.execute("ALTER TABLE file_index ADD COLUMN account TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE file_index ADD COLUMN item_date TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -44,18 +58,30 @@ def get_file_record(conn, item):
     return c.fetchone()
 
 
-def upsert_file_record(conn, source, item, hash_value):
+def upsert_file_record(conn, source, item, hash_value, account=None, item_date=None):
     now = datetime.now().isoformat()
     c = conn.cursor()
-    c.execute(
-        """
-        INSERT INTO file_index (source, item, hash, created_at, updated_at, deleted)
-        VALUES (?, ?, ?, ?, ?, 0)
-        ON CONFLICT(item) DO UPDATE SET hash=excluded.hash, \
-        updated_at=excluded.updated_at, deleted=0
-        """,
-        (source, item, hash_value, now, now),
-    )
+    # If account/item_date are provided, use them; otherwise, fallback to old logic
+    if account is not None or item_date is not None:
+        c.execute(
+            """
+            INSERT INTO file_index (source, item, hash, created_at, updated_at, deleted, account, item_date)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+            ON CONFLICT(item) DO UPDATE SET hash=excluded.hash, \
+            updated_at=excluded.updated_at, deleted=0, account=excluded.account, item_date=excluded.item_date
+            """,
+            (source, item, hash_value, now, now, account, item_date),
+        )
+    else:
+        c.execute(
+            """
+            INSERT INTO file_index (source, item, hash, created_at, updated_at, deleted)
+            VALUES (?, ?, ?, ?, ?, 0)
+            ON CONFLICT(item) DO UPDATE SET hash=excluded.hash, \
+            updated_at=excluded.updated_at, deleted=0
+            """,
+            (source, item, hash_value, now, now),
+        )
     conn.commit()
 
 
@@ -119,10 +145,11 @@ def load_documents(notes_path: str, conn) -> List[Document]:
 
 
 def load_gmail_documents(source_id: str, conn) -> List[Document]:
-    """Fetch and prepare Gmail messages from the last week for indexing."""
+    """Fetch and prepare Gmail messages for indexing (up to 1000)."""
     gmail_auth = GmailAuth()
     email_address = gmail_auth.get_user_email(source_id)
-    messages = gmail_auth.fetch_recent_messages(source_id, days=7)
+    # Increase to 1000 emails
+    messages = gmail_auth.fetch_recent_messages(source_id, days=365, max_results=1000)
     documents = []
     for msg in messages:
         # Extract subject and snippet for content
@@ -132,6 +159,7 @@ def load_gmail_documents(source_id: str, conn) -> List[Document]:
         subject = headers.get("Subject", "")
         snippet = msg.get("snippet", "")
         body = subject + "\n" + snippet
+        sent_date = msg.get("internalDate")
         doc = Document(
             page_content=body,
             metadata={
@@ -141,10 +169,19 @@ def load_gmail_documents(source_id: str, conn) -> List[Document]:
                 "deleted": False,
                 "subject": subject,
                 "snippet": snippet,
-                "internalDate": msg.get("internalDate"),
+                "internalDate": sent_date,
             },
         )
         documents.append(doc)
+        # Track in sqlite: source=gmail, item=subject, hash='', account=email_address, item_date=sent_date
+        upsert_file_record(
+            conn,
+            source="gmail",
+            item=subject,
+            hash_value="",
+            account=email_address,
+            item_date=sent_date,
+        )
     return documents
 
 

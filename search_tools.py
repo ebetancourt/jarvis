@@ -15,6 +15,36 @@ prompt_template = (
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
+def get_source_key(doc):
+    # Returns a stable key for deduplication
+    try:
+        if hasattr(doc, 'metadata'):
+            meta = doc.metadata
+            if meta.get("source") == "obsidian":
+                return ("obsidian", meta.get("item") or meta.get("file_path") or str(doc))
+            elif meta.get("source") == "Gmail":
+                return ("gmail", meta.get("subject") or meta.get("item") or str(doc))
+        if isinstance(doc, dict):
+            if doc.get("source") == "obsidian":
+                return ("obsidian", doc.get("item") or doc.get("file_path") or str(doc))
+            elif doc.get("source") == "Gmail":
+                return ("gmail", doc.get("subject") or doc.get("item") or str(doc))
+        if isinstance(doc, str):
+            return ("str", doc)
+    except Exception:
+        pass
+    return ("other", str(doc))
+
+def deduplicate_documents(documents):
+    seen = set()
+    unique_docs = []
+    for doc in documents:
+        key = get_source_key(doc)
+        if key not in seen:
+            seen.add(key)
+            unique_docs.append(doc)
+    return unique_docs
+
 def load_db():
     from notes_query import load_settings
 
@@ -43,7 +73,11 @@ def search_notes(query: str, k: int = 5):
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt},
     )
-    return chain.invoke({"query": query})
+    result = chain.invoke({"query": query})
+    # Deduplicate source_documents before returning
+    if "source_documents" in result:
+        result["source_documents"] = deduplicate_documents(result["source_documents"])
+    return result
 
 
 def search_gmail(query: str, k: int = 5):
@@ -60,4 +94,8 @@ def search_gmail(query: str, k: int = 5):
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt},
     )
-    return chain.invoke({"query": query})
+    result = chain.invoke({"query": query})
+    # Deduplicate source_documents before returning
+    if "source_documents" in result:
+        result["source_documents"] = deduplicate_documents(result["source_documents"])
+    return result
