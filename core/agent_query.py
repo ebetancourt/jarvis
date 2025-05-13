@@ -38,6 +38,38 @@ def llm_fallback(question: str):
     return {"result": response.content if hasattr(response, 'content') else str(response), "sources": []}
 
 
+def get_source_key(source):
+    # Returns a stable key for deduplication
+    try:
+        if hasattr(source, 'metadata'):
+            meta = source.metadata
+            if meta.get("source") == "obsidian":
+                return ("obsidian", meta.get("item") or meta.get("file_path") or str(source))
+            elif meta.get("source") == "Gmail":
+                return ("gmail", meta.get("subject") or meta.get("item") or str(source))
+        if isinstance(source, dict):
+            if source.get("source") == "obsidian":
+                return ("obsidian", source.get("item") or source.get("file_path") or str(source))
+            elif source.get("source") == "Gmail":
+                return ("gmail", source.get("subject") or source.get("item") or str(source))
+        if isinstance(source, str):
+            return ("str", source)
+    except Exception:
+        pass
+    return ("other", str(source))
+
+
+def deduplicate_sources(sources):
+    seen = set()
+    unique_sources = []
+    for source in sources:
+        key = get_source_key(source)
+        if key not in seen:
+            seen.add(key)
+            unique_sources.append(source)
+    return unique_sources
+
+
 def agent_query(question: str):
     q = (question or "").lower()
     if (
@@ -48,15 +80,30 @@ def agent_query(question: str):
     ):
         notes_result = search_notes(question)
         gmail_result = search_gmail(question)
-        combined_result = f"{notes_result['result']}\n{gmail_result['result']}"
-        combined_sources = list(notes_result.get("source_documents", [])) + list(
-            gmail_result.get("source_documents", [])
+
+        # Combine results, ensuring no duplication
+        notes_text = notes_result['result'].strip()
+        gmail_text = gmail_result['result'].strip()
+
+        # Only add newline between results if both have content
+        combined_result = ""
+        if notes_text and gmail_text:
+            combined_result = f"{notes_text}\n\n{gmail_text}"
+        else:
+            combined_result = notes_text or gmail_text
+
+        combined_sources = deduplicate_sources(
+            list(notes_result.get("source_documents", [])) +
+            list(gmail_result.get("source_documents", []))
         )
-        if not notes_result["result"].strip() and not gmail_result["result"].strip():
+
+        if not combined_result.strip():
             return llm_fallback(question)
+
         return {
             "result": combined_result,
             "sources": combined_sources,
+            "distances": notes_result.get("distances", [])  # Only include notes distances for now
         }
     elif "note" in q:
         notes_result = search_notes(question)
@@ -65,6 +112,7 @@ def agent_query(question: str):
         return {
             "result": notes_result["result"],
             "sources": notes_result.get("source_documents", []),
+            "distances": notes_result.get("distances", [])
         }
     elif "email" in q or "gmail" in q:
         gmail_result = search_gmail(question)
@@ -73,20 +121,34 @@ def agent_query(question: str):
         return {
             "result": gmail_result["result"],
             "sources": gmail_result.get("source_documents", []),
+            "distances": []  # Gmail doesn't have distances yet
         }
     else:
         # Default: try both, but if both are empty, fallback to LLM
         notes_result = search_notes(question)
         gmail_result = search_gmail(question)
-        combined_result = f"{notes_result['result']}\n{gmail_result['result']}"
-        combined_sources = list(notes_result.get("source_documents", [])) + list(
-            gmail_result.get("source_documents", [])
+
+        # Combine results, ensuring no duplication
+        notes_text = notes_result['result'].strip()
+        gmail_text = gmail_result['result'].strip()
+
+        # Only add newline between results if both have content
+        combined_result = ""
+        if notes_text and gmail_text:
+            combined_result = f"{notes_text}\n\n{gmail_text}"
+        else:
+            combined_result = notes_text or gmail_text
+
+        combined_sources = deduplicate_sources(
+            list(notes_result.get("source_documents", [])) +
+            list(gmail_result.get("source_documents", []))
         )
-        if not notes_result["result"].strip() and not gmail_result["result"].strip():
-            return llm_fallback(question)
+
         if not combined_result.strip() or "could not route" in combined_result.lower():
             return llm_fallback(question)
+
         return {
             "result": combined_result,
             "sources": combined_sources,
+            "distances": notes_result.get("distances", [])  # Only include notes distances for now
         }

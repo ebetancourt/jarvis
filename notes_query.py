@@ -10,6 +10,7 @@ from langchain.schema import Document
 import json
 from datetime import datetime
 from common.vector_store import VectorStore
+from search_tools import search_notes_with_distance
 
 # Prompt template for both chain and logging
 prompt_template = """You are a helpful assistant that answers questions based on the
@@ -117,54 +118,23 @@ def main():
         return
 
     try:
-        # Create the chain
-        chain = create_chain()
-
-        # Get the answer
-        result = chain.invoke({"query": args.question})
-
-        # Print the answer
-        print("\nAnswer:")
-        print(result["result"])
-
-        # Prepare sources (de-duplicated)
-        seen = set()
-        unique_sources = []
-        for doc in result["source_documents"]:
-            if isinstance(doc, Document):
-                source = doc.metadata.get("source", "Unknown source")
-            else:
-                source = format_source(doc)
-            if source not in seen:
-                seen.add(source)
-                unique_sources.append(source)
-
-        # Print sources
-        print("\nSources:")
-        for source in unique_sources:
-            print(f"- {source}")
-
-        # Log to query_log.json
-        log_entry = {
-            "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "query": args.question,
-            "prompt": prompt_template.format(
-                context="\n\n".join(
-                    [doc.page_content for doc in result["source_documents"]]
-                ),
-                question=args.question,
-            ),
-            "response": result["result"],
-            "sources": unique_sources,
-        }
-        with open("query_log.json", "a") as log_file:
-            log_file.write(json.dumps(log_entry, indent=2))
-            log_file.write("\n\n")
-
+        # Get the answer and distances
+        results = search_notes_with_distance(args.question, k=5)
+        if not results:
+            print("No relevant notes found.")
+            return
+        # Print the answer (use the top result's content as a preview)
+        print("\nTop Note Preview:")
+        print(results[0]["document"].page_content[:500])
+        # Print sources with distances
+        print("\nSources (with vector distance):")
+        for r in results:
+            meta = r["metadata"]
+            rel_path = meta.get("item") or meta.get("file_path") or "Unknown file"
+            print(f"- Obsidian: {rel_path} (distance: {r['distance']:.3f})")
     except Exception as e:
         print(f"Error: {str(e)}")
         import traceback
-
         print("\nDetailed error:")
         print(traceback.format_exc())
 

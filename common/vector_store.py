@@ -1,6 +1,6 @@
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 class VectorStore:
@@ -78,3 +78,17 @@ class VectorStore:
             )
 
         return self.as_retriever(filter_func=gmail_filter, **kwargs)
+
+    def similarity_search_with_distance(self, query: str, k: int = 5) -> List[Tuple[object, float]]:
+        """Return top-k (Document, distance) tuples for notes (obsidian only)."""
+        # Use the underlying Chroma API for similarity search with scores
+        # Filter for obsidian notes only
+        if self.db is None:
+            raise ValueError("Vector store is not loaded.")
+        # Chroma's similarity_search_with_relevance_scores returns (doc, score) pairs
+        results = self.db.similarity_search_with_relevance_scores(query, k=k)
+        filtered = []
+        for doc, score in results:
+            if doc.metadata.get("source") == "obsidian" and not doc.metadata.get("deleted", False):
+                filtered.append((doc, score))
+        return filtered

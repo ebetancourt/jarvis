@@ -61,6 +61,14 @@ def load_db():
 
 def search_notes(query: str, k: int = 5):
     vector_store = load_db()
+    # First get results with distances
+    results_with_distance = vector_store.similarity_search_with_distance(query, k=k)
+
+    # Extract documents and distances
+    documents = [doc for doc, _ in results_with_distance]
+    distances = [dist for _, dist in results_with_distance]
+
+    # Use the documents for the LLM chain
     retriever = vector_store.get_notes_retriever(search_kwargs={"k": k})
     prompt = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
@@ -74,6 +82,10 @@ def search_notes(query: str, k: int = 5):
         chain_type_kwargs={"prompt": prompt},
     )
     result = chain.invoke({"query": query})
+
+    # Add distances to the result
+    result["distances"] = distances
+
     # Deduplicate source_documents before returning
     if "source_documents" in result:
         result["source_documents"] = deduplicate_documents(result["source_documents"])
@@ -99,3 +111,16 @@ def search_gmail(query: str, k: int = 5):
     if "source_documents" in result:
         result["source_documents"] = deduplicate_documents(result["source_documents"])
     return result
+
+def search_notes_with_distance(query: str, k: int = 5):
+    vector_store = load_db()
+    results = vector_store.similarity_search_with_distance(query, k=k)
+    # Return a list of dicts for easier formatting
+    return [
+        {
+            "document": doc,
+            "distance": distance,
+            "metadata": getattr(doc, "metadata", {})
+        }
+        for doc, distance in results
+    ]
