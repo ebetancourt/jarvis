@@ -71,10 +71,11 @@ def test_unknown_tool(monkeypatch):
         {"tool": "unknown_tool", "query": "???"},
     )
     from core.agent_query import agent_query
-
-    result = agent_query("What is this?")
-    assert "could not route" in result["result"]
-    assert result["sources"] == []
+    with patch("core.agent_query.llm_fallback") as mock_llm:
+        mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
+        result = agent_query("What is this?")
+        assert result["result"] == "LLM fallback answer"
+        assert result["sources"] == []
 
 
 def test_malformed_agent_response(monkeypatch):
@@ -85,10 +86,11 @@ def test_malformed_agent_response(monkeypatch):
         {"not_tool": "oops"},
     )
     from core.agent_query import agent_query
-
-    result = agent_query("Malformed?")
-    assert "could not route" in result["result"]
-    assert result["sources"] == []
+    with patch("core.agent_query.llm_fallback") as mock_llm:
+        mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
+        result = agent_query("Malformed?")
+        assert result["result"] == "LLM fallback answer"
+        assert result["sources"] == []
 
 
 def test_search_notes_raises_exception(monkeypatch):
@@ -144,9 +146,11 @@ def test_empty_string_query(monkeypatch):
         {"tool": "search_notes", "query": ""},
     )
     from core.agent_query import agent_query
-
-    result = agent_query("")
-    assert "result" in result
+    with patch("core.agent_query.llm_fallback") as mock_llm:
+        mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
+        result = agent_query("")
+        assert result["result"] == "LLM fallback answer"
+        assert result["sources"] == []
 
 
 def test_none_query(monkeypatch):
@@ -157,6 +161,33 @@ def test_none_query(monkeypatch):
         {"tool": "search_notes", "query": None},
     )
     from core.agent_query import agent_query
+    with patch("core.agent_query.llm_fallback") as mock_llm:
+        mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
+        result = agent_query(None)
+        assert result["result"] == "LLM fallback answer"
+        assert result["sources"] == []
 
-    result = agent_query(None)
-    assert "result" in result
+
+def test_fallback_to_llm_when_tools_return_empty(monkeypatch):
+    # All tools return empty, agent should call LLM fallback
+    monkeypatch.setattr("core.agent_query.search_notes", lambda q: {"result": "", "source_documents": []})
+    monkeypatch.setattr("core.agent_query.search_gmail", lambda q: {"result": "", "source_documents": []})
+    # Patch the fallback LLM call
+    with patch("core.agent_query.llm_fallback") as mock_llm:
+        mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
+        result = agent_query("This is a query with no relevant tool.")
+        assert result["result"] == "LLM fallback answer"
+        assert result["sources"] == []
+
+
+def test_fallback_to_llm_on_could_not_route(monkeypatch):
+    # Simulate agent logic returning 'could not route'
+    monkeypatch.setattr("core.agent_query.search_notes", lambda q: {"result": "", "source_documents": []})
+    monkeypatch.setattr("core.agent_query.search_gmail", lambda q: {"result": "", "source_documents": []})
+    # Patch the fallback LLM call
+    with patch("core.agent_query.llm_fallback") as mock_llm:
+        mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
+        # Simulate a query that triggers the fallback
+        result = agent_query("???")
+        assert result["result"] == "LLM fallback answer"
+        assert result["sources"] == []
