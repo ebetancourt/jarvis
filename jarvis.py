@@ -4,7 +4,9 @@ load_dotenv()
 
 import argparse
 import sys
+import asyncio
 from core.agent_query import agent_query
+from plugins.todoist.server import complete_task_by_name
 
 def format_source(source, distance=None):
     # If it's a Document object with metadata, extract info
@@ -17,6 +19,11 @@ def format_source(source, distance=None):
             elif meta.get("source") == "Gmail":
                 subject = meta.get("subject") or meta.get("item") or "Gmail message"
                 s = f"Gmail: {subject}"
+            elif meta.get("source") == "todoist":
+                content = meta.get("content", "Unknown task")
+                project = f" (Project: {meta.get('project_name')})" if meta.get('project_name') else ""
+                due = f" (Due: {meta.get('due')})" if meta.get('due') else ""
+                s = f"Todoist: {content}{project}{due}"
             else:
                 s = str(source)
         elif isinstance(source, dict):
@@ -26,6 +33,11 @@ def format_source(source, distance=None):
             elif source.get("source") == "Gmail":
                 subject = source.get("subject") or source.get("item") or "Gmail message"
                 s = f"Gmail: {subject}"
+            elif source.get("source") == "todoist":
+                content = source.get("content", "Unknown task")
+                project = f" (Project: {source.get('project_name')})" if source.get('project_name') else ""
+                due = f" (Due: {source.get('due')})" if source.get('due') else ""
+                s = f"Todoist: {content}{project}{due}"
             else:
                 s = str(source)
         elif isinstance(source, str):
@@ -34,8 +46,9 @@ def format_source(source, distance=None):
             s = str(source)
     except Exception:
         s = str(source)
+
     if distance is not None:
-        s += f" (distance: {distance:.3f})"
+        s = f"{s} (score: {distance:.2f})"
     return s
 
 def get_source_key(source):
@@ -58,45 +71,33 @@ def get_source_key(source):
         pass
     return ("other", str(source))
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Ask Jarvis a question. The agent will search your notes, Gmail, or both as appropriate."
-    )
-    parser.add_argument(
-        "question",
-        type=str,
-        nargs=argparse.REMAINDER,
-        help="Your question for Jarvis (in natural language)",
-    )
+async def main():
+    parser = argparse.ArgumentParser(description='Jarvis CLI')
+    parser.add_argument('query', help='The query to process')
     args = parser.parse_args()
 
-    if not args.question or not any(word.strip() for word in args.question):
-        print("Error: Please provide a question to ask Jarvis.")
-        parser.print_help()
-        sys.exit(1)
+    # Check if this is a task completion command
+    if any(phrase in args.query.lower() for phrase in ['mark', 'complete', 'done', 'finish']):
+        # Extract task name from the query
+        task_name = args.query.lower()
+        for phrase in ['mark', 'complete', 'done', 'finish', 'as']:
+            task_name = task_name.replace(phrase, '')
+        task_name = task_name.strip()
 
-    question = " ".join(args.question).strip()
-    try:
-        result = agent_query(question)
+        result = await complete_task_by_name(task_name)
         print("\nAnswer:")
-        print(result.get("result", "No answer returned."))
-        sources = result.get("sources", [])
-        # Try to get distances if present
-        distances = result.get("distances")
+        print(result['message'])
+        return
 
-        if sources:
-            print("\nSources:")
-            for i, source in enumerate(sources):
-                distance = None
-                if distances and i < len(distances):
-                    distance = distances[i]
-                print(f"- {format_source(source, distance)}")
-        else:
-            print("\nSources: None found.")
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        print(traceback.format_exc())
+    # For other queries, use the regular agent_query
+    result = await agent_query(args.query)
+    print("\nAnswer:")
+    print(result['result'])
 
-if __name__ == "__main__":
-    main()
+    if result.get('sources'):
+        print("\nSources:")
+        for source in result['sources']:
+            print(f"- {format_source(source)}")
+
+if __name__ == '__main__':
+    asyncio.run(main())
