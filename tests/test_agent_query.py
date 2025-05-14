@@ -16,7 +16,6 @@ def patch_agent_query_tools(monkeypatch, notes_return, gmail_return, agent_retur
     monkeypatch.setattr("core.agent_query.search_gmail", lambda q: gmail_return)
     agent = MagicMock()
     agent.invoke.return_value = agent_return
-    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
 
 
 def test_notes_only_query(monkeypatch):
@@ -102,7 +101,6 @@ def test_search_notes_raises_exception(monkeypatch):
     monkeypatch.setattr("core.agent_query.search_notes", raise_exc)
     agent = MagicMock()
     agent.invoke.return_value = {"tool": "search_notes", "query": "fail"}
-    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
     with pytest.raises(Exception):
         agent_query("fail")
 
@@ -116,7 +114,6 @@ def test_search_gmail_raises_exception(monkeypatch):
     monkeypatch.setattr("core.agent_query.search_gmail", raise_exc)
     agent = MagicMock()
     agent.invoke.return_value = {"tool": "search_gmail", "query": "fail"}
-    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
     with pytest.raises(Exception):
         agent_query("fail")
 
