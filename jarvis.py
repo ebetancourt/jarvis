@@ -6,6 +6,7 @@ import argparse
 import sys
 import asyncio
 from core.agent_query import agent_query
+from plugins.todoist.server import complete_task_by_name
 
 def format_source(source, distance=None):
     # If it's a Document object with metadata, extract info
@@ -18,6 +19,11 @@ def format_source(source, distance=None):
             elif meta.get("source") == "Gmail":
                 subject = meta.get("subject") or meta.get("item") or "Gmail message"
                 s = f"Gmail: {subject}"
+            elif meta.get("source") == "todoist":
+                content = meta.get("content", "Unknown task")
+                project = f" (Project: {meta.get('project_name')})" if meta.get('project_name') else ""
+                due = f" (Due: {meta.get('due')})" if meta.get('due') else ""
+                s = f"Todoist: {content}{project}{due}"
             else:
                 s = str(source)
         elif isinstance(source, dict):
@@ -27,6 +33,11 @@ def format_source(source, distance=None):
             elif source.get("source") == "Gmail":
                 subject = source.get("subject") or source.get("item") or "Gmail message"
                 s = f"Gmail: {subject}"
+            elif source.get("source") == "todoist":
+                content = source.get("content", "Unknown task")
+                project = f" (Project: {source.get('project_name')})" if source.get('project_name') else ""
+                due = f" (Due: {source.get('due')})" if source.get('due') else ""
+                s = f"Todoist: {content}{project}{due}"
             else:
                 s = str(source)
         elif isinstance(source, str):
@@ -65,7 +76,20 @@ async def main():
     parser.add_argument('query', help='The query to process')
     args = parser.parse_args()
 
-    # Process the query using agent_query
+    # Check if this is a task completion command
+    if any(phrase in args.query.lower() for phrase in ['mark', 'complete', 'done', 'finish']):
+        # Extract task name from the query
+        task_name = args.query.lower()
+        for phrase in ['mark', 'complete', 'done', 'finish', 'as']:
+            task_name = task_name.replace(phrase, '')
+        task_name = task_name.strip()
+
+        result = await complete_task_by_name(task_name)
+        print("\nAnswer:")
+        print(result['message'])
+        return
+
+    # For other queries, use the regular agent_query
     result = await agent_query(args.query)
     print("\nAnswer:")
     print(result['result'])
