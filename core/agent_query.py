@@ -2,14 +2,6 @@ from search_tools import search_notes, search_gmail
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 from langchain.agents import initialize_agent, AgentType
-from plugins.todoist.plugin import TodoistPlugin
-import os
-import asyncio
-import re
-
-
-# Initialize Todoist plugin
-todoist_plugin = TodoistPlugin(os.getenv('TODOIST_API_TOKEN'))
 
 
 # Wrap the search tools as LangChain tools
@@ -27,95 +19,17 @@ def search_gmail_tool(query: str) -> str:
     return result["result"]
 
 
-@tool("search_todoist", return_direct=True)
-async def search_todoist_tool(query: str) -> str:
-    """Search your Todoist tasks."""
-    result = await todoist_plugin.search(query)
-    formatted_tasks = []
-    for task in result:
-        due = task['metadata'].get('due', {})
-        due_str = f" (Due: {due})" if due else ""
-        priority = "❗" * task['metadata'].get('priority', 1)
-        formatted_tasks.append(f"{priority} {task['content']}{due_str}")
-
-    if not formatted_tasks:
-        return "No tasks found."
-    return "\n".join(formatted_tasks)
-
-
-def is_task_query(query: str) -> bool:
-    """Determine if a query is task-related without using the LLM."""
-    task_keywords = {
-        'task', 'tasks', 'todo', 'todos', 'to-do', 'to do',
-        'due', 'overdue', 'today', 'tomorrow', 'week',
-        'remind', 'reminder', 'schedule', 'scheduled'
-    }
-    query_words = set(query.lower().split())
-    return bool(query_words & task_keywords)
-
-
-async def agent_query(query: str) -> dict:
-    """Process a query and return relevant information."""
-
-    # Direct routing for task-related queries
-    if is_task_query(query):
-        try:
-            result = await todoist_plugin.search(query)
-            if isinstance(result, dict) and 'success' in result:
-                return {
-                    "result": result['message'],
-                    "sources": result.get('tasks', []),
-                    "distances": []
-                }
-            elif not result:
-                return {
-                    "result": "No tasks found matching your query.",
-                    "sources": [],
-                    "distances": []
-                }
-
-            # Format task results
-            formatted_tasks = []
-            for task in result:
-                due = task['metadata'].get('due', {})
-                due_str = f" (Due: {due})" if due else ""
-                priority = "❗" * task['metadata'].get('priority', 1)
-                formatted_tasks.append(f"{priority} {task['content']}{due_str}")
-
-            return {
-                "result": "\n".join(formatted_tasks),
-                "sources": result,  # Include the task data as sources
-                "distances": []  # Tasks don't have distance scores
-            }
-        except Exception as e:
-            return {
-                "result": f"Error searching tasks: {str(e)}",
-                "sources": [],
-                "distances": []
-            }
-
-    # For non-task queries, use the LLM-based agent
-    try:
-        llm = ChatOpenAI(temperature=0)
-        agent = initialize_agent(
-            tools=[search_notes_tool, search_gmail_tool],
-            llm=llm,
-            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-            verbose=True
-        )
-
-        result = await agent.arun(query)
-        return {
-            "result": result,
-            "sources": [],  # Agent results don't have sources
-            "distances": []
-        }
-    except Exception as e:
-        return {
-            "result": f"Error processing query: {str(e)}",
-            "sources": [],
-            "distances": []
-        }
+def create_agent():
+    llm = ChatOpenAI(model_name="gpt-4-turbo-preview", temperature=0.0, max_tokens=500)
+    tools = [search_notes_tool, search_gmail_tool]
+    agent = initialize_agent(
+        tools,
+        llm,
+        agent=AgentType.OPENAI_FUNCTIONS,
+        verbose=False,
+        handle_parsing_errors=True,
+    )
+    return agent
 
 
 def llm_fallback(question: str):
@@ -124,7 +38,7 @@ def llm_fallback(question: str):
     return {"result": response.content if hasattr(response, 'content') else str(response), "sources": []}
 
 
-def get_source_key(source, tool_source=None):
+def get_source_key(source):
     # Returns a stable key for deduplication
     try:
         if hasattr(source, 'metadata'):
@@ -133,29 +47,108 @@ def get_source_key(source, tool_source=None):
                 return ("obsidian", meta.get("item") or meta.get("file_path") or str(source))
             elif meta.get("source") == "Gmail":
                 return ("gmail", meta.get("subject") or meta.get("item") or str(source))
-            elif meta.get("source") == "todoist":
-                return ("todoist", meta.get("task_id") or str(source))
         if isinstance(source, dict):
             if source.get("source") == "obsidian":
                 return ("obsidian", source.get("item") or source.get("file_path") or str(source))
             elif source.get("source") == "Gmail":
                 return ("gmail", source.get("subject") or source.get("item") or str(source))
-            elif source.get("source") == "todoist":
-                return ("todoist", source.get("task_id") or str(source))
         if isinstance(source, str):
-            # Include the tool source in the key to prevent deduplication across tools
-            return (tool_source or "str", source)
+            return ("str", source)
     except Exception:
         pass
     return ("other", str(source))
 
 
-def deduplicate_sources(sources, tool_source=None):
+def deduplicate_sources(sources):
     seen = set()
     unique_sources = []
     for source in sources:
-        key = get_source_key(source, tool_source)
+        key = get_source_key(source)
         if key not in seen:
             seen.add(key)
             unique_sources.append(source)
     return unique_sources
+
+
+def agent_query(question: str):
+    q = (question or "").lower()
+    if (
+        ("note" in q and "email" in q)
+        or ("both" in q)
+        or ("everything" in q)
+        or ("all" in q)
+    ):
+        notes_result = search_notes(question)
+        gmail_result = search_gmail(question)
+
+        # Combine results, ensuring no duplication
+        notes_text = notes_result['result'].strip()
+        gmail_text = gmail_result['result'].strip()
+
+        # Only add newline between results if both have content
+        combined_result = ""
+        if notes_text and gmail_text:
+            combined_result = f"{notes_text}\n\n{gmail_text}"
+        else:
+            combined_result = notes_text or gmail_text
+
+        combined_sources = deduplicate_sources(
+            list(notes_result.get("source_documents", [])) +
+            list(gmail_result.get("source_documents", []))
+        )
+
+        if not combined_result.strip():
+            return llm_fallback(question)
+
+        return {
+            "result": combined_result,
+            "sources": combined_sources,
+            "distances": notes_result.get("distances", [])  # Only include notes distances for now
+        }
+    elif "note" in q:
+        notes_result = search_notes(question)
+        if not notes_result["result"].strip():
+            return llm_fallback(question)
+        return {
+            "result": notes_result["result"],
+            "sources": notes_result.get("source_documents", []),
+            "distances": notes_result.get("distances", [])
+        }
+    elif "email" in q or "gmail" in q:
+        gmail_result = search_gmail(question)
+        if not gmail_result["result"].strip():
+            return llm_fallback(question)
+        return {
+            "result": gmail_result["result"],
+            "sources": gmail_result.get("source_documents", []),
+            "distances": []  # Gmail doesn't have distances yet
+        }
+    else:
+        # Default: try both, but if both are empty, fallback to LLM
+        notes_result = search_notes(question)
+        gmail_result = search_gmail(question)
+
+        # Combine results, ensuring no duplication
+        notes_text = notes_result['result'].strip()
+        gmail_text = gmail_result['result'].strip()
+
+        # Only add newline between results if both have content
+        combined_result = ""
+        if notes_text and gmail_text:
+            combined_result = f"{notes_text}\n\n{gmail_text}"
+        else:
+            combined_result = notes_text or gmail_text
+
+        combined_sources = deduplicate_sources(
+            list(notes_result.get("source_documents", [])) +
+            list(gmail_result.get("source_documents", []))
+        )
+
+        if not combined_result.strip() or "could not route" in combined_result.lower():
+            return llm_fallback(question)
+
+        return {
+            "result": combined_result,
+            "sources": combined_sources,
+            "distances": notes_result.get("distances", [])  # Only include notes distances for now
+        }
