@@ -70,7 +70,7 @@ def deduplicate_sources(sources):
     return unique_sources
 
 
-def agent_query(question: str):
+def agent_query(question: str, deduplicate_sources_flag: bool = True):
     q = (question or "").lower()
     if (
         ("note" in q and "email" in q)
@@ -92,10 +92,8 @@ def agent_query(question: str):
         else:
             combined_result = notes_text or gmail_text
 
-        combined_sources = deduplicate_sources(
-            list(notes_result.get("source_documents", [])) +
-            list(gmail_result.get("source_documents", []))
-        )
+        sources_concat = list(notes_result.get("source_documents", [])) + list(gmail_result.get("source_documents", []))
+        combined_sources = deduplicate_sources_flag(sources_concat) if deduplicate_sources_flag else sources_concat
 
         if not combined_result.strip():
             return llm_fallback(question)
@@ -139,10 +137,8 @@ def agent_query(question: str):
         else:
             combined_result = notes_text or gmail_text
 
-        combined_sources = deduplicate_sources(
-            list(notes_result.get("source_documents", [])) +
-            list(gmail_result.get("source_documents", []))
-        )
+        sources_concat = list(notes_result.get("source_documents", [])) + list(gmail_result.get("source_documents", []))
+        combined_sources = deduplicate_sources(sources_concat) if deduplicate_sources_flag else sources_concat
 
         if not combined_result.strip() or "could not route" in combined_result.lower():
             return llm_fallback(question)

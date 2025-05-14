@@ -130,7 +130,7 @@ def test_both_tools_with_overlapping_sources(monkeypatch):
     )
     from core.agent_query import agent_query
 
-    result = agent_query("Show me everything about shared.md")
+    result = agent_query("Show me everything about shared.md", deduplicate_sources_flag=False)
     assert "notes info" in result["result"]
     assert "gmail info" in result["result"]
     assert result["sources"].count("shared.md") == 2
