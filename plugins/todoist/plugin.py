@@ -3,7 +3,7 @@ from datetime import datetime
 from plugins.todoist.server import (
     initialize_api, search_tasks, add_task, update_task, complete_task,
     add_comment, get_task_comments, add_recurring_task, get_projects,
-    get_labels, add_label, TodoistError, add_project, reschedule_filtered_tasks
+    get_labels, add_label, TodoistError, add_project
 )
 
 class TodoistPlugin:
@@ -199,47 +199,6 @@ class TodoistPlugin:
         except TodoistError as e:
             print(f"Error updating Todoist task: {e}")
             return None
-
-    async def reschedule_overdue(self, due_string: str = "today") -> Dict[str, Any]:
-        """Reschedule all overdue tasks to a new due date.
-
-        Args:
-            due_string: Natural language due date (e.g. "today", "tomorrow")
-
-        Returns:
-            Dict with success status and results
-        """
-        try:
-            result = await reschedule_filtered_tasks("overdue", due_string)
-            return result
-        except TodoistError as e:
-            print(f"Error rescheduling overdue tasks: {e}")
-            return {
-                "success": False,
-                "message": f"Error rescheduling overdue tasks: {str(e)}",
-                "tasks": []
-            }
-
-    async def reschedule_tasks_by_filter(self, filter_string: str, due_string: str) -> Dict[str, Any]:
-        """Reschedule tasks matching a filter to a new due date.
-
-        Args:
-            filter_string: Todoist filter query (e.g. "today", "7 days", "no date")
-            due_string: Natural language due date (e.g. "tomorrow", "next Monday")
-
-        Returns:
-            Dict with success status and results
-        """
-        try:
-            result = await reschedule_filtered_tasks(filter_string, due_string)
-            return result
-        except TodoistError as e:
-            print(f"Error rescheduling tasks with filter '{filter_string}': {e}")
-            return {
-                "success": False,
-                "message": f"Error rescheduling tasks: {str(e)}",
-                "tasks": []
-            }
 
     def get_tools(self) -> List[Dict[str, Any]]:
         """Get the list of tools provided by this plugin."""

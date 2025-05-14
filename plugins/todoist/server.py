@@ -366,8 +366,13 @@ async def complete_task(task_id: str) -> bool:
         raise TodoistError("Todoist API not initialized. Call initialize_api first.")
 
     try:
-        await _api_request(api.complete_task, task_id=task_id)
-        return True
+        # Use the REST API v2 endpoint directly
+        async with aiohttp.ClientSession() as session:
+            headers = {"Authorization": f"Bearer {api_token}"}
+            url = f"https://api.todoist.com/rest/v2/tasks/{task_id}/close"
+            async with session.post(url, headers=headers) as response:
+                response.raise_for_status()
+                return True
     except Exception as e:
         print(f"Error completing task: {e}")
         return False
@@ -1034,161 +1039,6 @@ async def get_filter_documentation() -> str:
         Formatted string containing filter documentation
     """
     return get_filter_help()
-
-@mcp.tool()
-async def reschedule_tasks(
-    tasks: List[Dict[str, Any]],
-    due_string: str
-) -> Dict[str, Any]:
-    """Reschedule multiple tasks to a new due date.
-
-    Args:
-        tasks: List of tasks to reschedule
-        due_string: Natural language due date (e.g. "today", "tomorrow", "next Monday")
-
-    Returns:
-        Dict with success status, message, and updated tasks
-    """
-    if not api:
-        raise TodoistError("Todoist API not initialized. Call initialize_api first.")
-
-    if not tasks:
-        return {
-            "success": False,
-            "message": "No tasks provided to reschedule",
-            "tasks": []
-        }
-
-    updated_tasks = []
-    failed_tasks = []
-
-    for task in tasks:
-        task_id = task.get('id')
-        if not task_id:
-            failed_tasks.append(task)
-            continue
-
-        try:
-            # Skip recurring tasks as they can't be rescheduled
-            if task.get('due', {}).get('is_recurring'):
-                failed_tasks.append(task)
-                continue
-
-            # Update the task
-            updated_task = await _api_request(api.update_task, task_id=task_id, due_string=due_string)
-            if updated_task:
-                updated_tasks.append(task_to_dict(updated_task))
-            else:
-                failed_tasks.append(task)
-        except Exception as e:
-            logger.error(f"Failed to reschedule task {task_id}: {str(e)}")
-            failed_tasks.append(task)
-
-    # Prepare response message
-    if not updated_tasks and not failed_tasks:
-        return {
-            "success": False,
-            "message": "No tasks were found to reschedule",
-            "tasks": []
-        }
-
-    message_parts = []
-    if updated_tasks:
-        message_parts.append(f"Successfully rescheduled {len(updated_tasks)} tasks to {due_string}")
-    if failed_tasks:
-        recurring_tasks = sum(1 for t in failed_tasks if t.get('due', {}).get('is_recurring'))
-        other_failed = len(failed_tasks) - recurring_tasks
-        if recurring_tasks:
-            message_parts.append(f"{recurring_tasks} recurring tasks could not be rescheduled")
-        if other_failed:
-            message_parts.append(f"{other_failed} tasks failed to reschedule")
-
-    return {
-        "success": len(updated_tasks) > 0,
-        "message": ". ".join(message_parts),
-        "tasks": updated_tasks,
-        "failed_tasks": failed_tasks
-    }
-
-@mcp.tool()
-async def reschedule_filtered_tasks(filter_string: str, due_string: str) -> Dict[str, Any]:
-    """Reschedule tasks matching a filter string.
-
-    Args:
-        filter_string: Todoist filter query string
-        due_string: New due date in natural language format
-
-    Returns:
-        Dict with success status and results
-    """
-    try:
-        # Get all tasks first
-        tasks = await _api_request(api.get_tasks)
-
-        # Convert tasks to list of dicts for consistent handling
-        tasks = [task_to_dict(task) for task in tasks]
-
-        # Apply filter using Todoist's REST API filter format
-        filtered_tasks = []
-        for task in tasks:
-            # Basic filter implementations
-            if filter_string == "overdue":
-                if task.get('due') and task['due'].get('date'):
-                    due_date = datetime.fromisoformat(task['due']['date'].replace('Z', '+00:00'))
-                    if due_date.date() < datetime.now().date():
-                        filtered_tasks.append(task)
-            elif filter_string == "today":
-                if task.get('due') and task['due'].get('date'):
-                    due_date = datetime.fromisoformat(task['due']['date'].replace('Z', '+00:00'))
-                    if due_date.date() == datetime.now().date():
-                        filtered_tasks.append(task)
-            elif filter_string == "no date":
-                if not task.get('due'):
-                    filtered_tasks.append(task)
-            elif filter_string.endswith("days"):
-                try:
-                    days = int(filter_string.split()[0])
-                    if task.get('due') and task['due'].get('date'):
-                        due_date = datetime.fromisoformat(task['due']['date'].replace('Z', '+00:00'))
-                        future_date = datetime.now() + timedelta(days=days)
-                        if due_date.date() <= future_date.date():
-                            filtered_tasks.append(task)
-                except (ValueError, IndexError):
-                    pass
-            # Add more filter implementations as needed
-
-        if not filtered_tasks:
-            return {
-                "success": False,
-                "message": f"No tasks found matching filter: {filter_string}",
-                "tasks": []
-            }
-
-        # Reschedule the filtered tasks
-        updated_tasks = []
-        for task in filtered_tasks:
-            try:
-                updated_task = await update_task(
-                    task_id=task['id'],
-                    due_string=due_string
-                )
-                updated_tasks.append(updated_task)
-            except TodoistError as e:
-                logger.error(f"Failed to reschedule task {task['id']}: {str(e)}")
-
-        return {
-            "success": True,
-            "message": f"Rescheduled {len(updated_tasks)} tasks to {due_string}",
-            "tasks": updated_tasks
-        }
-
-    except Exception as e:
-        logger.error(f"Error in reschedule_filtered_tasks: {str(e)}")
-        return {
-            "success": False,
-            "message": f"Failed to reschedule tasks: {str(e)}",
-            "tasks": []
-        }
 
 if __name__ == "__main__":
     import os
