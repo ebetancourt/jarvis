@@ -6,10 +6,14 @@ from plugins.todoist.plugin import TodoistPlugin
 import os
 import asyncio
 import re
+import logging
 
 
 # Initialize Todoist plugin
 todoist_plugin = TodoistPlugin(os.getenv('TODOIST_API_TOKEN'))
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 
 # Wrap the search tools as LangChain tools
@@ -60,6 +64,36 @@ async def agent_query(query: str) -> dict:
     # Direct routing for task-related queries
     if is_task_query(query):
         try:
+            # Check for rescheduling requests
+            if "reschedule" in query.lower() and ("overdue" in query.lower() or "due" in query.lower()):
+                # Extract the target date if specified, default to "today"
+                due_words = ["to", "for", "until"]
+                due_string = "today"
+                for word in due_words:
+                    if word in query.lower():
+                        parts = query.lower().split(word)
+                        if len(parts) > 1:
+                            due_string = parts[1].strip()
+                            break
+
+                # Handle overdue tasks specifically
+                if "overdue" in query.lower():
+                    result = await todoist_plugin.reschedule_overdue(due_string)
+                else:
+                    # Extract filter string from query
+                    filter_string = "today"  # default
+                    if "due" in query.lower():
+                        filter_string = "overdue | today"  # include both overdue and today's tasks
+
+                    result = await todoist_plugin.reschedule_tasks_by_filter(filter_string, due_string)
+
+                return {
+                    "result": result['message'],
+                    "sources": result.get('tasks', []),
+                    "distances": []
+                }
+
+            # Handle other task queries
             result = await todoist_plugin.search(query)
             if isinstance(result, dict) and 'success' in result:
                 return {
@@ -77,19 +111,24 @@ async def agent_query(query: str) -> dict:
             # Format task results
             formatted_tasks = []
             for task in result:
-                due = task['metadata'].get('due', {})
-                due_str = f" (Due: {due})" if due else ""
-                priority = "❗" * task['metadata'].get('priority', 1)
-                formatted_tasks.append(f"{priority} {task['content']}{due_str}")
+                formatted_task = {
+                    'content': task['content'],
+                    'source': task['source'],
+                    'source_type': task['source_type'],
+                    'metadata': task['metadata']
+                }
+                formatted_tasks.append(formatted_task)
 
             return {
-                "result": "\n".join(formatted_tasks),
-                "sources": result,  # Include the task data as sources
-                "distances": []  # Tasks don't have distance scores
+                "result": f"Found {len(formatted_tasks)} matching tasks",
+                "sources": formatted_tasks,
+                "distances": []
             }
+
         except Exception as e:
+            print(f"Error processing task query: {e}")
             return {
-                "result": f"Error searching tasks: {str(e)}",
+                "result": f"Error processing task query: {str(e)}",
                 "sources": [],
                 "distances": []
             }
