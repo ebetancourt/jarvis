@@ -10,7 +10,7 @@ from langchain.schema import Document
 import json
 from datetime import datetime
 from common.vector_store import VectorStore
-from search_tools import search_notes_with_distance
+from search_tools import search_notes
 
 # Prompt template for both chain and logging
 prompt_template = """You are a helpful assistant that answers questions based on the
@@ -119,7 +119,7 @@ def main():
 
     try:
         # Get the answer and distances
-        results = search_notes_with_distance(args.question, k=5)
+        results = search_notes(args.question, k=5)
         if not results:
             print("No relevant notes found.")
             return

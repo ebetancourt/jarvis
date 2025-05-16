@@ -1,27 +1,30 @@
 import os
-from langchain_openai import ChatOpenAI
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from common.vector_store import VectorStore
 
-prompt_template = (
-    "You are a helpful assistant that answers questions based on the "
-    "provided context from the user's notes and emails. Use the context to provide "
-    "accurate and relevant answers. If the context doesn't contain enough information "
-    "to answer the question, say so.\n\nContext: {context}\n\nQuestion: {question}"
-    "\n\nAnswer:"
-)
+from pydantic import BaseModel
+from common.vector_store import VectorStore
+from langchain_core.tools import tool
+from typing import Any, Dict, List
+from langchain_core.documents import Document
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+class SearchResult(BaseModel):
+    document: Document
+    distance: float
+    metadata: Dict[str, Any]
 
 
 def get_source_key(doc):
     # Returns a stable key for deduplication
     try:
-        if hasattr(doc, 'metadata'):
+        if hasattr(doc, "metadata"):
             meta = doc.metadata
             if meta.get("source") == "obsidian":
-                return ("obsidian", meta.get("item") or meta.get("file_path") or str(doc))
+                return (
+                    "obsidian",
+                    meta.get("item") or meta.get("file_path") or str(doc),
+                )
             elif meta.get("source") == "Gmail":
                 return ("gmail", meta.get("subject") or meta.get("item") or str(doc))
         if isinstance(doc, dict):
@@ -35,6 +38,7 @@ def get_source_key(doc):
         pass
     return ("other", str(doc))
 
+
 def deduplicate_documents(documents):
     seen = set()
     unique_docs = []
@@ -44,6 +48,7 @@ def deduplicate_documents(documents):
             seen.add(key)
             unique_docs.append(doc)
     return unique_docs
+
 
 def load_db():
     from notes_query import load_settings
@@ -59,68 +64,41 @@ def load_db():
     return vector_store
 
 
-def search_notes(query: str, k: int = 5):
+@tool
+def search_notes(query: str, k: int = 5) -> List[SearchResult]:
+    """Search the user's notes for relevant information."""
     vector_store = load_db()
     # First get results with distances
-    results_with_distance = vector_store.similarity_search_with_distance(query, k=k)
-
-    # Extract documents and distances
-    documents = [doc for doc, _ in results_with_distance]
-    distances = [dist for _, dist in results_with_distance]
-
-    # Use the documents for the LLM chain
-    retriever = vector_store.get_notes_retriever(search_kwargs={"k": k})
-    prompt = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
+    results = vector_store.similarity_search_with_distance(
+        query, k=k, source="obsidian"
     )
-    llm = ChatOpenAI(model_name="gpt-4-turbo-preview", temperature=0.7, max_tokens=1000)
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": prompt},
-    )
-    result = chain.invoke({"query": query})
+    results = deduplicate_documents(results)
 
-    # Add distances to the result
-    result["distances"] = distances
-
-    # Deduplicate source_documents before returning
-    if "source_documents" in result:
-        result["source_documents"] = deduplicate_documents(result["source_documents"])
-    return result
-
-
-def search_gmail(query: str, k: int = 5):
-    vector_store = load_db()
-    retriever = vector_store.get_gmail_retriever(search_kwargs={"k": k})
-    prompt = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
-    )
-    llm = ChatOpenAI(model_name="gpt-4-turbo-preview", temperature=0.7, max_tokens=1000)
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": prompt},
-    )
-    result = chain.invoke({"query": query})
-    # Deduplicate source_documents before returning
-    if "source_documents" in result:
-        result["source_documents"] = deduplicate_documents(result["source_documents"])
-    return result
-
-def search_notes_with_distance(query: str, k: int = 5):
-    vector_store = load_db()
-    results = vector_store.similarity_search_with_distance(query, k=k)
     # Return a list of dicts for easier formatting
     return [
         {
             "document": doc,
             "distance": distance,
-            "metadata": getattr(doc, "metadata", {})
+            "metadata": getattr(doc, "metadata", {}),
+        }
+        for doc, distance in results
+    ]
+
+
+@tool
+def search_gmail(query: str, k: int = 5) -> List[SearchResult]:
+    """Search the user's Gmail for relevant information."""
+    vector_store = load_db()
+    # First get results with distances
+    results = vector_store.similarity_search_with_distance(query, k=k, source="Gmail")
+    results = deduplicate_documents(results)
+
+    # Return a list of dicts for easier formatting
+    return [
+        {
+            "document": doc,
+            "distance": distance,
+            "metadata": getattr(doc, "metadata", {}),
         }
         for doc, distance in results
     ]

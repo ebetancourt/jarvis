@@ -1,140 +1,144 @@
-from search_tools import search_notes, search_gmail
+import os
+import logging
+import json
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt.chat_agent_executor import create_react_agent
-import os
+from langgraph.graph import StateGraph, END, START
 
+from search_tools import search_notes, search_gmail
 
-# Wrap the search tools as LangChain tools
-@tool("search_notes", return_direct=True)
-def search_notes_tool(query: str) -> str:
-    """Search your notes for relevant information."""
-    result = search_notes(query)
-    return result["result"]
+# At the top of the file, alias the real search functions:
+search_notes_fn = search_notes
+search_gmail_fn = search_gmail
 
+def search_notes_tool(search_notes=None, **state):
+    logging.warning(f"[TOOL CALL] search_notes_tool called with query: {search_notes}")
+    logging.warning(f"[TOOL CALL] search_notes_tool received state: {state}")
+    result = search_notes_fn(search_notes)
+    state = state or {}
+    state = dict(state)
+    state["search_notes"] = result["result"]
+    state["search_notes_full"] = result  # For future source tracking
+    return state
 
-@tool("search_gmail", return_direct=True)
-def search_gmail_tool(query: str) -> str:
-    """Search your Gmail for relevant information."""
-    result = search_gmail(query)
-    return result["result"]
+search_notes_tool = tool(
+    "search_notes",
+    return_direct=True,
+    description="Search the user's notes for relevant information."
+)(search_notes_tool)
 
+def search_gmail_tool(search_gmail=None, **state):
+    logging.warning(f"[TOOL CALL] search_gmail_tool called with query: {search_gmail}")
+    logging.warning(f"[TOOL CALL] search_gmail_tool received state: {state}")
+    result = search_gmail_fn(search_gmail)
+    state = state or {}
+    state = dict(state)
+    state["search_gmail"] = result["result"]
+    state["search_gmail_full"] = result  # For future source tracking
+    return state
+
+search_gmail_tool = tool(
+    "search_gmail",
+    return_direct=True,
+    description="Search the user's Gmail for relevant information."
+)(search_gmail_tool)
+
+def tool_router_node(state):
+    user_query = state["messages"][-1]["content"]
+    tools = [
+        {"name": "search_notes", "description": "Search the user's notes for relevant information."},
+        {"name": "search_gmail", "description": "Search the user's Gmail for relevant information."}
+    ]
+    guidance = (
+        "Always search notes, even for general knowledge queries. "
+        "Search email if the question is about something specific in the user's life, "
+        "an upcoming event, a past event, or anything related to subscriptions, purchases, receipts, or notifications. "
+        "For each tool, rewrite the query to be optimal for that tool."
+        "\n\n"
+        "Examples:\n"
+        "User: When is my Obsidian Sync renewal?\n"
+        "Tools to use: search_notes (query: 'Obsidian Sync renewal date'), search_gmail (query: 'Obsidian Sync renewal receipt or notification')\n"
+        "User: What did I write about Chris Pratt's workout?\n"
+        "Tools to use: search_notes (query: 'Chris Pratt workout routine')\n"
+    )
+    llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0.0, max_tokens=500)
+    system_prompt = (
+        f"You are a tool router. Available tools:\n"
+        + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
+        + f"\nGuidance: {guidance}\n"
+        "Given the user query, respond in JSON with a list of tools to use and the rewritten query for each."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_query}
+    ]
+    response = llm.invoke(messages)
+    try:
+        parsed = json.loads(response.content)
+        tools_to_use = parsed.get("tools_to_use") or parsed.get("tools")
+        new_state = {"tools_to_use": tools_to_use, "messages": state["messages"]}
+        for tool in tools_to_use or []:
+            tool_key = tool.get("tool") or tool.get("name")
+            if tool_key and tool.get("query"):
+                new_state[tool_key] = tool["query"]
+        return new_state
+    except Exception as e:
+        logging.error(f"Router LLM failed to parse JSON: {e}\nResponse: {response.content}")
+        # fallback: just use notes
+        return {"tools_to_use": [{"tool": "search_notes", "query": user_query}], "messages": state["messages"], "search_notes": user_query}
 
 def create_agent():
-    llm = ChatOpenAI(model_name="gpt-4-turbo-preview", temperature=0.0, max_tokens=500)
+    llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0.0, max_tokens=500)
     tools = [search_notes_tool, search_gmail_tool]
-    agent = create_react_agent(llm, tools)
-    return agent
-
-
-def llm_fallback(question: str):
-    llm = ChatOpenAI(model_name="gpt-4-turbo-preview", temperature=0.7, max_tokens=1000)
-    response = llm.invoke(question)
-    return {"result": response.content if hasattr(response, 'content') else str(response), "sources": []}
-
-
-def get_source_key(source):
-    # Returns a stable key for deduplication
-    try:
-        if hasattr(source, 'metadata'):
-            meta = source.metadata
-            if meta.get("source") == "obsidian":
-                return ("obsidian", meta.get("item") or meta.get("file_path") or str(source))
-            elif meta.get("source") == "Gmail":
-                return ("gmail", meta.get("subject") or meta.get("item") or str(source))
-        if isinstance(source, dict):
-            if source.get("source") == "obsidian":
-                return ("obsidian", source.get("item") or source.get("file_path") or str(source))
-            elif source.get("source") == "Gmail":
-                return ("gmail", source.get("subject") or source.get("item") or str(source))
-        if isinstance(source, str):
-            return ("str", source)
-    except Exception:
-        pass
-    return ("other", str(source))
-
-
-def deduplicate_sources(sources):
-    seen = set()
-    unique_sources = []
-    for source in sources:
-        key = get_source_key(source)
-        if key not in seen:
-            seen.add(key)
-            unique_sources.append(source)
-    return unique_sources
-
+    # Build the LangGraph graph
+    builder = StateGraph(dict)
+    builder.add_node("router", tool_router_node)
+    builder.add_node("search_notes", search_notes_tool)
+    builder.add_node("search_gmail", search_gmail_tool)
+    # Routing logic: router -> tools as selected
+    def route_tools(state):
+        for tool_call in state.get("tools_to_use", []):
+            tool_name = tool_call.get("tool") or tool_call.get("name")
+            logging.warning(f"[ROUTER] Routing to tool: {tool_name}")
+            yield tool_name
+        yield END
+    builder.add_edge(START, "router")
+    builder.add_conditional_edges("router", route_tools)
+    builder.add_edge("search_notes", END)
+    builder.add_edge("search_gmail", END)
+    graph = builder.compile()
+    return graph
 
 def agent_query(question: str, deduplicate_sources_flag: bool = True):
-    # Return a dummy result if in test mode
     if os.environ.get("JARVIS_TEST_MODE") == "1":
         return {"result": "This is a dummy answer.", "sources": ["dummy_source.md"]}
-    q = (question or "").lower()
-    if (
-        ("note" in q and "email" in q)
-        or ("both" in q)
-        or ("everything" in q)
-        or ("all" in q)
-    ):
-        notes_result = search_notes(question)
-        gmail_result = search_gmail(question)
-
-        # Combine results, ensuring no duplication
-        notes_text = notes_result['result'].strip()
-        gmail_text = gmail_result['result'].strip()
-
-        # Only add newline between results if both have content
-        combined_result = ""
-        if notes_text and gmail_text:
-            combined_result = f"{notes_text}\n\n{gmail_text}"
-        else:
-            combined_result = notes_text or gmail_text
-
-        sources_concat = list(notes_result.get("source_documents", [])) + list(gmail_result.get("source_documents", []))
-        combined_sources = deduplicate_sources_flag(sources_concat) if deduplicate_sources_flag else sources_concat
-
-        if not combined_result.strip():
-            return llm_fallback(question)
-
-        return {
-            "result": combined_result,
-            "sources": combined_sources,
-            "distances": notes_result.get("distances", [])  # Only include notes distances for now
-        }
-    elif "note" in q:
-        notes_result = search_notes(question)
-        if not notes_result["result"].strip():
-            return llm_fallback(question)
-        return {
-            "result": notes_result["result"],
-            "sources": notes_result.get("source_documents", []),
-            "distances": notes_result.get("distances", [])
-        }
-    elif "email" in q or "gmail" in q:
-        gmail_result = search_gmail(question)
-        if not gmail_result["result"].strip():
-            return llm_fallback(question)
-        return {
-            "result": gmail_result["result"],
-            "sources": gmail_result.get("source_documents", []),
-            "distances": []  # Gmail doesn't have distances yet
-        }
+    state = {"messages": [{"role": "user", "content": question}]}
+    agent = create_agent()
+    result = agent.invoke(state)
+    logging.warning(f"[FINAL STATE] {result}")
+    tool_results = []
+    if result.get("search_notes"):
+        tool_results.append("Notes result: " + result["search_notes"])
+    if result.get("search_gmail"):
+        tool_results.append("Gmail result: " + result["search_gmail"])
+    if tool_results:
+        synthesis_prompt = (
+            f"User question: {question}\n"
+            f"Tool results:\n" +
+            "\n".join(tool_results) +
+            "\n\nCompose a helpful, precise answer for the user using the above information."
+        )
+        llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0.0, max_tokens=500)
+        response = llm.invoke([
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": synthesis_prompt}
+        ])
+        final_result = response.content if hasattr(response, 'content') else str(response)
     else:
-        # Default: try both, but if both are empty, fallback to LLM
-        agent = create_agent()
-        agent_output = agent.invoke({"messages": [{"role": "user", "content": question}]})
-        # Expecting agent_output to be a dict with 'result' and 'sources' keys, or similar
-        result = agent_output.get("result", "")
-        sources = agent_output.get("sources", [])
-        distances = agent_output.get("distances", []) if "distances" in agent_output else []
-
-        if not result.strip() or "could not route" in result.lower():
-            return llm_fallback(question)
-
-        combined_sources = deduplicate_sources(sources) if deduplicate_sources_flag else sources
-
-        return {
-            "result": result,
-            "sources": combined_sources,
-            "distances": distances
-        }
+        final_result = "No answer found."
+    return {
+        "result": final_result,
+        "sources": [],
+        "distances": []
+    }
