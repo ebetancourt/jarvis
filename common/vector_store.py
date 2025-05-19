@@ -80,11 +80,12 @@ class VectorStore:
 
         return self.as_retriever(filter_func=gmail_filter, **kwargs)
 
-    def similarity_search_with_distance(self, query: str, k: int = 5, source: str = "") -> List[Tuple[Document, float]]:
+    def similarity_search_with_distance(
+        self, query: str, k: int = 5, source: str = "", score_threshold: float = 0.2
+    ) -> List[Tuple[Document, float]]:
         """Return top-k (Document, distance) tuples for notes (obsidian only)."""
         # Use the underlying Chroma API for similarity search with scores
         # Filter for obsidian notes only
-
         filter = {"deleted": False}
         if source:
             filter = {
@@ -96,9 +97,7 @@ class VectorStore:
         if self.db is None:
             raise ValueError("Vector store is not loaded.")
         # Chroma's similarity_search_with_relevance_scores returns (doc, score) pairs
-        results = self.db.similarity_search_with_score(
-            query,
-            k=k,
-            filter=filter
+        results = self.db.similarity_search_with_relevance_scores(
+            query, k=k, filter=filter, score_threshold=score_threshold
         )
         return results

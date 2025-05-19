@@ -3,40 +3,34 @@ import os
 from pydantic import BaseModel
 from common.vector_store import VectorStore
 from langchain_core.tools import tool
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from langchain_core.documents import Document
+from utils.strToKeywords import strToKeywords
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 class SearchResult(BaseModel):
+    item: str
+    bucket: str
+    source: str
     document: Document
     distance: float
     metadata: Dict[str, Any]
 
 
-def get_source_key(doc):
+def get_source_key(doc_result: Tuple[Document, float]):
     # Returns a stable key for deduplication
-    try:
-        if hasattr(doc, "metadata"):
-            meta = doc.metadata
-            if meta.get("source") == "obsidian":
-                return (
-                    "obsidian",
-                    meta.get("item") or meta.get("file_path") or str(doc),
-                )
-            elif meta.get("source") == "Gmail":
-                return ("gmail", meta.get("subject") or meta.get("item") or str(doc))
-        if isinstance(doc, dict):
-            if doc.get("source") == "obsidian":
-                return ("obsidian", doc.get("item") or doc.get("file_path") or str(doc))
-            elif doc.get("source") == "Gmail":
-                return ("gmail", doc.get("subject") or doc.get("item") or str(doc))
-        if isinstance(doc, str):
-            return ("str", doc)
-    except Exception:
-        pass
-    return ("other", str(doc))
+    doc, distance = doc_result
+    source = doc.metadata.get("source", "unknown")
+
+    match source:
+        case "obsidian":
+            return doc.metadata.get("item", "unknown")
+        case "Gmail":
+            return doc.metadata.get("subject", "unknown")
+        case _:
+            return str(doc)
 
 
 def deduplicate_documents(documents):
@@ -65,18 +59,25 @@ def load_db():
 
 
 @tool
-def search_notes(query: str, k: int = 5) -> List[SearchResult]:
+def search_notes(query: str, k: int = 5):
     """Search the user's notes for relevant information."""
+    keywords = strToKeywords(query)
+    keywords_str = " ".join(keywords)
+    print(f'Searching for: "{keywords_str}"')
+
     vector_store = load_db()
     # First get results with distances
     results = vector_store.similarity_search_with_distance(
-        query, k=k, source="obsidian"
+        keywords_str, k=k, source="obsidian"
     )
     results = deduplicate_documents(results)
 
     # Return a list of dicts for easier formatting
     return [
         {
+            "item": doc.metadata.get("item", ""),
+            "bucket": doc.metadata.get("bucket", ""),
+            "source": doc.metadata.get("source", ""),
             "document": doc,
             "distance": distance,
             "metadata": getattr(doc, "metadata", {}),
@@ -88,14 +89,22 @@ def search_notes(query: str, k: int = 5) -> List[SearchResult]:
 @tool
 def search_gmail(query: str, k: int = 5) -> List[SearchResult]:
     """Search the user's Gmail for relevant information."""
+    keywords = strToKeywords(query)
+    keywords_str = " ".join(keywords)
+    print(f'Searching for: "{keywords_str}"')
     vector_store = load_db()
     # First get results with distances
-    results = vector_store.similarity_search_with_distance(query, k=k, source="Gmail")
+    results = vector_store.similarity_search_with_distance(
+        keywords_str, k=k, source="Gmail"
+    )
     results = deduplicate_documents(results)
 
     # Return a list of dicts for easier formatting
     return [
         {
+            "item": doc.metadata.get("subject", ""),
+            "bucket": doc.metadata.get("bucket", ""),
+            "source": doc.metadata.get("source", ""),
             "document": doc,
             "distance": distance,
             "metadata": getattr(doc, "metadata", {}),
