@@ -24,6 +24,7 @@ wheels/
 venv/
 ENV/
 env/
+lc-academy/
 
 # IDE
 .idea/
@@ -37,6 +38,7 @@ chroma_db/
 settings.yml
 query_log.json
 index_tracker.sqlite3
+.langgraph_api/
 
 # Logs
 *.log

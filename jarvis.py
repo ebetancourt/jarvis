@@ -1,28 +1,43 @@
 #!/usr/bin/env python3
-from search_tools import search_notes, search_gmail
+import argparse
+from datetime import datetime
+import sys
+from langgraph.prebuilt import create_react_agent
 from dotenv import load_dotenv
+from plugins.tools import tools
 
 load_dotenv()
 
-notes = search_notes.invoke("What did I write about Chris Pratt's workout?")
-emails = search_gmail.invoke("When does my Obsidian Sync renewal come up?")
 
-print("")
-print("")
-print("Notes:")
-for note in notes:
-    print(f"Item: {note['item']}")
-    print(f"Bucket: {note['bucket']}")
-    print(f"Source: {note['source']}")
-    print(f"Distance: {note['distance']}")
-    print("")
+current_date = datetime.now().strftime("%Y-%m-%d")
+graph = create_react_agent(
+    "anthropic:claude-3-7-sonnet-latest",
+    tools=tools,
+    prompt=f"Today is {current_date}. You are a helpful assistant.",
+)
 
-print("")
-print("")
-print("Gmail:")
-for email in emails:
-    print(f"Item: {email['item']}")
-    print(f"Bucket: {email['bucket']}")
-    print(f"Source: {email['source']}")
-    print(f"Distance: {email['distance']}")
-    print("")
+
+def main():
+    parser = argparse.ArgumentParser(description="Ask Jarvis a question.")
+    parser.add_argument(
+        "question",
+        type=str,
+        nargs=argparse.REMAINDER,
+        help="Your question for Jarvis (in natural language)",
+    )
+    args = parser.parse_args()
+
+    if not args.question or not any(word.strip() for word in args.question):
+        print("Error: Please provide a question to ask Jarvis.")
+        parser.print_help()
+        sys.exit(1)
+
+    question = " ".join(args.question).strip()
+
+    inputs = {"messages": [{"role": "user", "content": question}]}
+    for chunk in graph.stream(inputs, stream_mode="updates"):
+        print(chunk)
+
+
+if __name__ == "__main__":
+    main()
