@@ -2,7 +2,7 @@ from typing import Any, Dict, Tuple
 from pydantic import BaseModel
 from langchain_core.documents import Document
 from common.vector_store import VectorStore
-from notes_query import load_settings
+from utils.load_settings import load_settings
 
 
 class SearchResult(BaseModel):
