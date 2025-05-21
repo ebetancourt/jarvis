@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, END, START
 from core.nodes import call_model, should_continue  # import nodes
 from core.state import AgentState  # import state
 from dotenv import load_dotenv
-from tools import tool_node
+from plugins.tools import tool_node
 
 load_dotenv()
 
