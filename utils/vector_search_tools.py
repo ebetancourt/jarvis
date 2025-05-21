@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from langchain_core.documents import Document
-from common.get_vector_store import get_vector_store
+from common.get_vector_store import get_vector_store_from_config
 from utils.load_settings import load_settings
 
 
@@ -39,15 +39,6 @@ def deduplicate_documents(documents):
 
 
 def load_db():
-    settings = load_settings()
-    vector_store = get_vector_store(
-        db_type="chromadb",
-        config={
-            "persist_directory": "./chroma_db",
-            "embedding_model": settings.get(
-                "embedding_model", "sentence-transformers/all-mpnet-base-v2"
-            ),
-        },
-    )
+    vector_store = get_vector_store_from_config()
     vector_store.load()
     return vector_store

@@ -4,7 +4,7 @@ import os
 import yaml
 import glob
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from common.get_vector_store import get_vector_store
+from common.get_vector_store import get_vector_store_from_config
 from plugins.obsidian.indexer import index_obsidian
 from plugins.gmail.indexer import index_gmail
 from common.db_utils import (
@@ -65,15 +65,7 @@ def main():
     print(f"Created {len(chunks)} chunks")
     # Initialize vector store
     print("Initializing vector store...")
-    vector_store = get_vector_store(
-        db_type="chromadb",
-        config={
-            "persist_directory": "./chroma_db",
-            "embedding_model": settings.get(
-                "embedding_model", "sentence-transformers/all-mpnet-base-v2"
-            ),
-        },
-    )
+    vector_store = get_vector_store_from_config()
     vector_store.add_documents(chunks)
     print("Database updated successfully!")
 
