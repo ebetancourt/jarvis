@@ -1,7 +1,6 @@
-from typing import Any, Dict, Tuple
 from pydantic import BaseModel
 from langchain_core.documents import Document
-from common.vector_store import VectorStore
+from common.get_vector_store import get_vector_store
 from utils.load_settings import load_settings
 
 
@@ -11,10 +10,10 @@ class SearchResult(BaseModel):
     source: str
     document: Document
     distance: float
-    metadata: Dict[str, Any]
+    metadata: dict
 
 
-def get_source_key(doc_result: Tuple[Document, float]):
+def get_source_key(doc_result):
     # Returns a stable key for deduplication
     doc, distance = doc_result
     source = doc.metadata.get("source", "unknown")
@@ -41,11 +40,14 @@ def deduplicate_documents(documents):
 
 def load_db():
     settings = load_settings()
-    vector_store = VectorStore(
-        persist_directory="./chroma_db",
-        embedding_model=settings.get(
-            "embedding_model", "sentence-transformers/all-mpnet-base-v2"
-        ),
+    vector_store = get_vector_store(
+        db_type="chromadb",
+        config={
+            "persist_directory": "./chroma_db",
+            "embedding_model": settings.get(
+                "embedding_model", "sentence-transformers/all-mpnet-base-v2"
+            ),
+        },
     )
     vector_store.load()
     return vector_store
