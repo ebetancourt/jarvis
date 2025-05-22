@@ -1,0 +1,3 @@
+[submodule "plugins/todoist/mcp-server"]
+	path = plugins/todoist/mcp-server
+	url = git@github.com:mikemc/todoist-mcp-server.git

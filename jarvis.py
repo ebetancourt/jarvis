@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
 import argparse
+import asyncio
 from datetime import datetime
 import sys
 from langgraph.prebuilt import create_react_agent
 from dotenv import load_dotenv
-from plugins.tools import tools
+from plugins.tools import get_tools
 
 load_dotenv()
 
 
-current_date = datetime.now().strftime("%Y-%m-%d")
-graph = create_react_agent(
-    "anthropic:claude-3-7-sonnet-latest",
-    tools=tools,
-    prompt=f"Today is {current_date}. You are a helpful assistant.",
-)
+async def get_agent():
+    tools = await get_tools()
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    graph = create_react_agent(
+        "anthropic:claude-3-7-sonnet-latest",
+        tools=tools,
+        prompt=f"Today is {current_date}. You are a helpful assistant.",
+    )
+    return graph
 
 
-def main():
+async def main():
+    graph = await get_agent()
     parser = argparse.ArgumentParser(description="Ask Jarvis a question.")
     parser.add_argument(
         "question",
@@ -35,9 +40,9 @@ def main():
     question = " ".join(args.question).strip()
 
     inputs = {"messages": [{"role": "user", "content": question}]}
-    for chunk in graph.stream(inputs, stream_mode="updates"):
+    async for chunk in graph.astream(inputs, stream_mode="updates"):
         print(chunk)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
