@@ -1,18 +1,17 @@
 import sys
 import os
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import pytest
 from unittest.mock import patch, MagicMock
-from common.vector_store import VectorStore
+from common.get_vector_store import get_vector_store
 import search_tools
 from langchain.schema import Document
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 @pytest.fixture
 def mock_vector_store():
-    vs = VectorStore()
+    vs = get_vector_store(db_type="chromadb", config={})
     vs.db = MagicMock()
     docs = [
         Document(

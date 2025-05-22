@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  milvus:
+    image: milvusdb/milvus:v2.4.4
+    container_name: milvus-standalone
+    environment:
+      - MILVUS_MODE=standalone
+      - ETCD_USE_EMBED=true
+      - MINIO_USE_EMBED=true
+      - DATA_PATH=/var/lib/milvus
+    ports:
+      - "19530:19530"   # Milvus gRPC
+      - "9091:9091"     # Milvus HTTP RESTful API
+      - "9092:9092"     # Milvus Metrics
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  milvus_data:

@@ -7,7 +7,9 @@ import pytest
 JARVIS_CLI = os.path.join(os.path.dirname(__file__), '..', 'jarvis.py')
 
 @pytest.mark.skipif(not os.path.exists(JARVIS_CLI), reason="jarvis.py not found")
-def test_jarvis_cli_runs():
+def test_jarvis_cli_runs(monkeypatch):
+    # Set test mode for the CLI subprocess
+    monkeypatch.setenv("JARVIS_TEST_MODE", "1")
     # Run the CLI with a dummy question and check for output (smoke test)
     result = subprocess.run([sys.executable, JARVIS_CLI, "What is this project?"], capture_output=True, text=True)
     assert result.returncode == 0

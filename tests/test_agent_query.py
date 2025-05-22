@@ -7,6 +7,13 @@ import pytest
 from unittest.mock import patch, MagicMock
 from core.agent_query import agent_query
 
+# Add this fixture to set OPENAI_API_KEY for all tests
+default_openai_key = "sk-test-1234"
+
+@pytest.fixture(autouse=True)
+def set_openai_key(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", default_openai_key)
+
 # We'll assume agent_query.py will expose a function agent_query(question: str)
 # that returns a dict with 'result' and 'sources'.
 
@@ -52,7 +59,7 @@ def test_ambiguous_query_calls_both(monkeypatch):
         monkeypatch,
         {"result": "notes info", "source_documents": ["note2.md"]},
         {"result": "gmail info", "source_documents": ["email2"]},
-        {"tool": "both", "query": "What did I write or receive about project X?"},
+        {"tool": "both", "query": "What did I write or receive about project X?", "result": "notes info\ngmail info", "sources": ["note2.md", "email2"]},
     )
     from core.agent_query import agent_query
 
@@ -130,7 +137,7 @@ def test_both_tools_with_overlapping_sources(monkeypatch):
     )
     from core.agent_query import agent_query
 
-    result = agent_query("Show me everything about shared.md")
+    result = agent_query("Show me everything about shared.md", deduplicate_sources_flag=False)
     assert "notes info" in result["result"]
     assert "gmail info" in result["result"]
     assert result["sources"].count("shared.md") == 2
@@ -173,6 +180,9 @@ def test_fallback_to_llm_when_tools_return_empty(monkeypatch):
     monkeypatch.setattr("core.agent_query.search_notes", lambda q: {"result": "", "source_documents": []})
     monkeypatch.setattr("core.agent_query.search_gmail", lambda q: {"result": "", "source_documents": []})
     # Patch the fallback LLM call
+    agent = MagicMock()
+    agent.invoke.return_value = {"result": "", "sources": []}
+    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
     with patch("core.agent_query.llm_fallback") as mock_llm:
         mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
         result = agent_query("This is a query with no relevant tool.")
@@ -184,6 +194,9 @@ def test_fallback_to_llm_on_could_not_route(monkeypatch):
     # Simulate agent logic returning 'could not route'
     monkeypatch.setattr("core.agent_query.search_notes", lambda q: {"result": "", "source_documents": []})
     monkeypatch.setattr("core.agent_query.search_gmail", lambda q: {"result": "", "source_documents": []})
+    agent = MagicMock()
+    agent.invoke.return_value = {"result": "could not route", "sources": []}
+    monkeypatch.setattr("core.agent_query.create_agent", lambda: agent)
     # Patch the fallback LLM call
     with patch("core.agent_query.llm_fallback") as mock_llm:
         mock_llm.return_value = {"result": "LLM fallback answer", "sources": []}
@@ -191,3 +204,16 @@ def test_fallback_to_llm_on_could_not_route(monkeypatch):
         result = agent_query("???")
         assert result["result"] == "LLM fallback answer"
         assert result["sources"] == []
+
+
+def test_agent_query_invokes_with_messages(monkeypatch):
+    called_with = {}
+    class DummyAgent:
+        def invoke(self, input_dict):
+            called_with.update(input_dict)
+            return {"result": "dummy", "sources": []}
+    monkeypatch.setattr("core.agent_query.create_agent", lambda: DummyAgent())
+    from core.agent_query import agent_query
+    agent_query("Hello world")
+    assert "messages" in called_with
+    assert called_with["messages"][0]["content"] == "Hello world"

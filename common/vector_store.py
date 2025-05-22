@@ -1,94 +1,34 @@
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
-from typing import List, Optional, Tuple
+from abc import ABC, abstractmethod
+from typing import List
 
 
-class VectorStore:
-    def __init__(
-        self,
-        persist_directory: str = "./chroma_db",
-        embedding_model: Optional[str] = None,
-    ):
-        self.persist_directory = persist_directory
-        self.embedding_model = (
-            embedding_model or "sentence-transformers/all-mpnet-base-v2"
-        )
-        self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
-        self.db = None
-
+class VectorStore(ABC):
+    @abstractmethod
     def from_documents(self, documents: List, **kwargs):
-        """Create a new vector store from documents."""
-        self.db = Chroma.from_documents(
-            documents=documents,
-            embedding=self.embeddings,
-            persist_directory=self.persist_directory,
-            **kwargs,
-        )
-        return self
+        pass
 
+    @abstractmethod
     def add_documents(self, documents: List, **kwargs):
-        """Add documents to the existing vector store."""
-        if self.db is None:
-            self.from_documents(documents, **kwargs)
-        else:
-            self.db.add_documents(documents)
+        pass
 
+    @abstractmethod
     def load(self):
-        """Load an existing vector store from disk."""
-        self.db = Chroma(
-            persist_directory=self.persist_directory, embedding_function=self.embeddings
-        )
-        return self
+        pass
 
+    @abstractmethod
     def as_retriever(self, **kwargs):
-        if self.db is None:
-            raise ValueError("Vector store is not loaded.")
-        # Add a default filter to exclude deleted items
-        filter_func = kwargs.pop("filter_func", None)
+        pass
 
-        def not_deleted_filter(doc):
-            return not doc.metadata.get("deleted", False)
-
-        if filter_func:
-
-            def combined_filter(doc):
-                return not_deleted_filter(doc) and filter_func(doc)
-
-            kwargs["filter_func"] = combined_filter
-        else:
-            kwargs["filter_func"] = not_deleted_filter
-        return self.db.as_retriever(**kwargs)
-
+    @abstractmethod
     def get_notes_retriever(self, **kwargs):
-        """Return a retriever that only searches notes (source == 'obsidian')."""
+        pass
 
-        def notes_filter(doc):
-            return doc.metadata.get("source") == "obsidian" and not doc.metadata.get(
-                "deleted", False
-            )
-
-        return self.as_retriever(filter_func=notes_filter, **kwargs)
-
+    @abstractmethod
     def get_gmail_retriever(self, **kwargs):
-        """Return a retriever that only searches Gmail (source == 'Gmail')."""
+        pass
 
-        def gmail_filter(doc):
-            return doc.metadata.get("source") == "Gmail" and not doc.metadata.get(
-                "deleted", False
-            )
-
-        return self.as_retriever(filter_func=gmail_filter, **kwargs)
-
-    def similarity_search_with_distance(self, query: str, k: int = 5) -> List[Tuple[object, float]]:
-        """Return top-k (Document, distance) tuples for notes (obsidian only)."""
-        # Use the underlying Chroma API for similarity search with scores
-        # Filter for obsidian notes only
-        if self.db is None:
-            raise ValueError("Vector store is not loaded.")
-        # Chroma's similarity_search_with_relevance_scores returns (doc, score) pairs
-        results = self.db.similarity_search_with_relevance_scores(query, k=k)
-        filtered = []
-        for doc, score in results:
-            if doc.metadata.get("source") == "obsidian" and not doc.metadata.get("deleted", False):
-                filtered.append((doc, score))
-        return filtered
+    @abstractmethod
+    def similarity_search_with_distance(
+        self, query: str, k: int = 5, source: str = "", score_threshold: float = 0.2
+    ):
+        pass

@@ -1,35 +1,29 @@
 #!/usr/bin/env python3
 from dotenv import load_dotenv
-load_dotenv()
-
 import os
 import yaml
-from typing import List
 import glob
-from datetime import datetime
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from common.vector_store import VectorStore
-from langchain.schema import Document
-from common.google_auth import GmailAuth
+from common.get_vector_store import get_vector_store_from_config
 from plugins.obsidian.indexer import index_obsidian
 from plugins.gmail.indexer import index_gmail
 from common.db_utils import (
     init_db,
-    upsert_file_record,
-    get_file_record,
     mark_deleted,
     get_all_items,
-    hash_file,
 )
+
+load_dotenv()
 
 # Set TOKENIZERS_PARALLELISM to false to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# --- Main logic ---
+
 def load_settings():
     """Load settings from settings.yml."""
     with open("settings.yml", "r") as file:
         return yaml.safe_load(file)
+
 
 def main():
     # Load settings
@@ -71,14 +65,10 @@ def main():
     print(f"Created {len(chunks)} chunks")
     # Initialize vector store
     print("Initializing vector store...")
-    vector_store = VectorStore(
-        persist_directory="./chroma_db",
-        embedding_model=settings.get(
-            "embedding_model", "sentence-transformers/all-mpnet-base-v2"
-        ),
-    )
+    vector_store = get_vector_store_from_config()
     vector_store.add_documents(chunks)
     print("Database updated successfully!")
+
 
 if __name__ == "__main__":
     main()
