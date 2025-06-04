@@ -75,6 +75,43 @@ services:
         - path: src/streamlit_app.py
           action: sync+restart
           target: /app/streamlit_app.py
+  next:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.next
+    restart: always
+    volumes:
+      - ./agent-web-kit:/app
+      - /app/node_modules
+      - /app/.next
+    env_file:
+      - .env
+    ports:
+      - 3000:3000
+
+  weaviate:
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8088'
+      - --scheme
+      - http
+    image: semitechnologies/weaviate:1.17.2
+    ports:
+      - 8088:8088
+    restart: on-failure:0
+    env_file:
+      - .env
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'text2vec-openai'
+      ENABLE_MODULES: 'text2vec-openai,qna-openai'
+      CLUSTER_HOSTNAME: 'openai-weaviate-cluster'
+      OPENAI_APIKEY: ${OPENAI_API_KEY}
+      # Optionally set your OpenAI API key here, or provide it at runtime
 
 volumes:
   postgres_data:
