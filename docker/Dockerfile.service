@@ -5,6 +5,9 @@ WORKDIR /app
 ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
 ENV UV_COMPILE_BYTECODE=1
 
+# Install build tools
+RUN apt-get update && apt-get install -y build-essential g++ git && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml .
 COPY uv.lock .
 RUN pip install --no-cache-dir uv
@@ -15,6 +18,10 @@ COPY src/core/ ./core/
 COPY src/memory/ ./memory/
 COPY src/schema/ ./schema/
 COPY src/service/ ./service/
+COPY src/plugins/ ./plugins/
+COPY src/common/ ./common/
+COPY src/data/ ./data/
+COPY src/utils/ ./utils/
 COPY src/run_service.py .
 
 CMD ["python", "run_service.py"]

@@ -54,7 +54,25 @@ dependencies = [
     "uvicorn ~=0.32.1",
     "pypdf ~=5.3.0",
     "docx2txt ~=0.8",
-
+    "langchain>=0.1.12",
+    "langchain-huggingface>=0.2.0",
+    "chromadb==0.4.24",
+    "pyyaml==6.0.2",
+    "sentence-transformers>=2.6.0",
+    "unstructured[md]==0.17.2",
+    "black==24.2.0",
+    "flake8==7.0.0",
+    "xxhash>=3.4.1",
+    "google-api-python-client==2.118.0",
+    "google-auth==2.28.1",
+    "google-auth-oauthlib==1.2.0",
+    "google-auth-httplib2==0.2.0",
+    "platformdirs>=4.2.0",
+    "coverage",
+    "rake-nltk",
+    "tavily-python",
+    "dotenv",
+    "langchain-mcp-adapters",
 ]
 
 [dependency-groups]

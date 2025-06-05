@@ -8,7 +8,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-agent_service}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./.docker_data/postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -31,23 +31,34 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - ./.docker_data/agent_service_data:/app/data
     develop:
       watch:
         - path: src/agents/
           action: sync+restart
           target: /app/agents/
-        - path: src/schema/
+        - path: src/common/
           action: sync+restart
-          target: /app/schema/
-        - path: src/service/
-          action: sync+restart
-          target: /app/service/
+          target: /app/common/
         - path: src/core/
           action: sync+restart
           target: /app/core/
         - path: src/memory/
           action: sync+restart
           target: /app/memory/
+        - path: src/plugins/
+          action: sync+restart
+          target: /app/plugins/
+        - path: src/utils/
+          action: sync+restart
+          target: /app/utils/
+        - path: src/schema/
+          action: sync+restart
+          target: /app/schema/
+        - path: src/service/
+          action: sync+restart
+          target: /app/service/
 
   streamlit_app:
     build:
