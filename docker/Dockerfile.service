@@ -12,6 +12,9 @@ COPY pyproject.toml .
 COPY uv.lock .
 RUN pip install --no-cache-dir uv
 RUN uv sync --frozen --no-install-project --no-dev
+RUN python -m nltk.downloader -d /app/nltk_data punkt_tab stopwords
+ENV NLTK_DATA=/app/nltk_data
+
 
 COPY src/agents/ ./agents/
 COPY src/core/ ./core/
@@ -23,5 +26,6 @@ COPY src/common/ ./common/
 COPY src/data/ ./data/
 COPY src/utils/ ./utils/
 COPY src/run_service.py .
+COPY src/run_agent.py .
 
 CMD ["python", "run_service.py"]
