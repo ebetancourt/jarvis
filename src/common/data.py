@@ -5,6 +5,7 @@ from common.load_settings import load_settings
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
 )
+print(f"DATA_DIR: {DATA_DIR}")
 settings = load_settings()
 GITHUB_TOKEN = settings["github_token"]
 

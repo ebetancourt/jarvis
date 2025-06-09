@@ -15,4 +15,13 @@ def load_settings():
             "OBSIDIAN_REPO_URL", "https://github.com/ebetancourt/obsidian.git"
         ),
         "vector_db_type": os.environ.get("VECTOR_DB_TYPE", "chromadb"),
+        "weaviate": {
+            "host": os.environ.get("WEAVIATE_HOST", "localhost"),
+            "port": int(os.environ.get("WEAVIATE_PORT", 8080)),
+            "grpc_host": os.environ.get("WEAVIATE_GRPC_HOST", "localhost"),
+            "grpc_port": int(os.environ.get("WEAVIATE_GRPC_PORT", 50051)),
+            "secure": os.environ.get("WEAVIATE_SECURE", "false").lower() == "true",
+            "grpc_secure": os.environ.get("WEAVIATE_GRPC_SECURE", "false").lower()
+            == "true",
+        },
     }

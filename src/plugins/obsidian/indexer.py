@@ -71,6 +71,9 @@ def run_index():
     # Load and index new/changed files (Obsidian)
     documents = index_obsidian(conn)
     print(f"Loaded {len(documents)} new or changed documents")
+    vector_store = get_vector_store_from_config(index_name="Obsidian", text_key="text")
+    print("Ensuring schema...")
+    print("Schema ensured")
     if not documents:
         print("No new or changed documents to index.")
         return
@@ -82,8 +85,12 @@ def run_index():
     )
     chunks = text_splitter.split_documents(documents)
     print(f"Created {len(chunks)} chunks")
+    print(f"Chunks to index: {len(chunks)}")
+    for chunk in chunks[:3]:
+        print(chunk.page_content, chunk.metadata, chunk)
     # Initialize vector store
     print("Initializing vector store...")
-    vector_store = get_vector_store_from_config()
+    print("Got vector store, going to add documents")
     vector_store.add_documents(chunks)
     print("Database updated successfully!")
+    vector_store.close()

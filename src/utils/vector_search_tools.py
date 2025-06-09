@@ -37,7 +37,9 @@ def deduplicate_documents(documents):
     return unique_docs
 
 
-def load_db():
-    vector_store = get_vector_store_from_config()
+def load_db(index_name="Document", text_key="text"):
+    vector_store = get_vector_store_from_config(
+        index_name=index_name, text_key=text_key
+    )
     vector_store.load()
     return vector_store

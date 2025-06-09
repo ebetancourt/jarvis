@@ -19,12 +19,17 @@ def search_notes(query: str, k: int = 5) -> List[SearchResult]:
     keywords_str = " ".join(keywords)
     print(f'Searching for: "{keywords_str}"')
 
-    vector_store = load_db()
+    vector_store = load_db(index_name="Obsidian", text_key="text")
     # First get results with distances
     results = vector_store.similarity_search_with_distance(
         keywords_str, k=k, source="obsidian"
     )
-    results = deduplicate_documents(results)
+    # results = deduplicate_documents(results)
+    vector_store.close()
+
+    print("Raw results:", results)
+    for doc, distance in results:
+        print("Doc metadata:", doc.metadata)
 
     # Return a list of dicts for easier formatting
     return [
