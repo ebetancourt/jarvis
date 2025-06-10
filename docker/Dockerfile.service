@@ -27,5 +27,6 @@ COPY src/data/ ./data/
 COPY src/utils/ ./utils/
 COPY src/run_service.py .
 COPY src/run_agent.py .
+COPY src/index_notes.py .
 
 CMD ["python", "run_service.py"]

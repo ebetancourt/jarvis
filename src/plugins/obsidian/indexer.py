@@ -85,5 +85,21 @@ def run_index():
     # Initialize vector store
     print("Initializing vector store...")
     vector_store = get_vector_store_from_config()
-    vector_store.add_documents(chunks)
+    # Add documents in batches with progress reporting
+    batch_size = 100
+    total = len(chunks)
+    print("Adding documents to vector store in batches...")
+    for i in range(0, total, batch_size):
+        batch = chunks[i : i + batch_size]
+        vector_store.add_documents(batch)
+        print(f"Added {min(i+batch_size, total)}/{total} chunks")
     print("Database updated successfully!")
+
+
+def get_full_note_text(item_relative_path):
+    note_path = os.path.join(DATA_DIR, OBSIDIAN_NOTES_PATH, item_relative_path)
+    try:
+        with open(note_path, "r") as f:
+            return f.read()
+    except Exception as e:
+        return f"[Error reading note: {e}]"

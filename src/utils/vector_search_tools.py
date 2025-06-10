@@ -10,6 +10,7 @@ class SearchResult(BaseModel):
     document: Document
     distance: float
     metadata: dict
+    full_text: str
 
 
 def get_source_key(doc_result):
