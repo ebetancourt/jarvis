@@ -8,6 +8,7 @@ from tools.journal_tools import (
     ensure_journal_directory,
     get_journal_directory,
     create_daily_file,
+    format_file_title,
 )
 
 
@@ -174,3 +175,86 @@ class TestJournalDirectoryFunctions:
                 # Verify journal directory was created
                 assert os.path.exists(journal_dir)
                 assert os.path.exists(result_path)
+
+    def test_format_file_title_default_date(self):
+        """Test that format_file_title formats today's date correctly."""
+        from datetime import date
+
+        # Call the function with default date
+        result = format_file_title()
+        today = date.today()
+
+        # Verify the format contains expected components
+        assert result.startswith("# ")
+        assert today.strftime("%A") in result  # Day of week
+        assert today.strftime("%B") in result  # Month name
+        assert today.strftime("%Y") in result  # Year
+        assert " of " in result
+
+    def test_format_file_title_custom_date(self):
+        """Test that format_file_title formats custom dates correctly."""
+        from datetime import date
+
+        test_date = date(2025, 6, 13)  # Friday, June 13th, 2025
+        result = format_file_title(test_date)
+
+        expected = "# Friday, 13th of June 2025"
+        assert result == expected
+
+    def test_format_file_title_ordinal_suffixes(self):
+        """Test that format_file_title generates correct ordinal suffixes."""
+        from datetime import date
+
+        # Test various ordinal cases
+        test_cases = [
+            (date(2025, 1, 1), "1st"),  # 1st
+            (date(2025, 1, 2), "2nd"),  # 2nd
+            (date(2025, 1, 3), "3rd"),  # 3rd
+            (date(2025, 1, 4), "4th"),  # 4th
+            (date(2025, 1, 11), "11th"),  # 11th (special case)
+            (date(2025, 1, 12), "12th"),  # 12th (special case)
+            (date(2025, 1, 13), "13th"),  # 13th (special case)
+            (date(2025, 1, 21), "21st"),  # 21st
+            (date(2025, 1, 22), "22nd"),  # 22nd
+            (date(2025, 1, 23), "23rd"),  # 23rd
+            (date(2025, 1, 31), "31st"),  # 31st
+        ]
+
+        for test_date, expected_ordinal in test_cases:
+            result = format_file_title(test_date)
+            assert (
+                expected_ordinal in result
+            ), f"Expected {expected_ordinal} in {result}"
+
+    def test_format_file_title_different_months_and_years(self):
+        """Test that format_file_title handles different months and years."""
+        from datetime import date
+
+        test_cases = [
+            (date(2023, 2, 14), "# Tuesday, 14th of February 2023"),
+            (date(2024, 12, 25), "# Wednesday, 25th of December 2024"),
+            (date(2025, 7, 4), "# Friday, 4th of July 2025"),
+            (date(2026, 11, 1), "# Sunday, 1st of November 2026"),
+        ]
+
+        for test_date, expected in test_cases:
+            result = format_file_title(test_date)
+            assert result == expected
+
+    def test_format_file_title_format_structure(self):
+        """Test that format_file_title follows the correct format structure."""
+        from datetime import date
+
+        result = format_file_title(date(2025, 6, 13))
+
+        # Should start with "# "
+        assert result.startswith("# ")
+
+        # Should contain required separators
+        assert ", " in result  # Between day of week and date
+        assert " of " in result  # Between date and month
+        assert " " in result  # Between month and year
+
+        # Should not contain unexpected characters
+        assert "\n" not in result
+        assert "\t" not in result

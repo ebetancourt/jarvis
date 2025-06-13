@@ -81,6 +81,46 @@ def create_daily_file(target_date: Optional[date] = None) -> str:
         raise OSError(f"Failed to create daily journal file {filename}: {e}")
 
 
+def format_file_title(target_date: Optional[date] = None) -> str:
+    """
+    Formats a date into a journal file title.
+
+    Creates a title in the format:
+    "# <DAY OF THE WEEK>, <CARDINAL DATE> of <MONTH> <YEAR>"
+    For example: "# Friday, 13th of June 2025"
+
+    Args:
+        target_date: The date to format. If None, uses today's date.
+
+    Returns:
+        str: The formatted title string starting with "# "
+    """
+    # Use today's date if no date is provided
+    if target_date is None:
+        target_date = date.today()
+
+    # Get day of the week (e.g., "Friday")
+    day_of_week = target_date.strftime("%A")
+
+    # Get month name (e.g., "June")
+    month_name = target_date.strftime("%B")
+
+    # Get year (e.g., "2025")
+    year = target_date.strftime("%Y")
+
+    # Get day and format with ordinal suffix (e.g., "13th")
+    day = target_date.day
+    if 10 <= day % 100 <= 20:  # Special case for 11th, 12th, 13th
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+    cardinal_date = f"{day}{suffix}"
+
+    # Format the complete title
+    return f"# {day_of_week}, {cardinal_date} of {month_name} {year}"
+
+
 def get_journal_directory() -> str:
     """
     Gets the absolute path to the journal directory.
