@@ -1,6 +1,8 @@
 import os
 import stat
 from pathlib import Path
+from datetime import date
+from typing import Optional
 from common.data import DATA_DIR
 
 
@@ -42,6 +44,41 @@ def ensure_journal_directory() -> str:
         )
     except OSError as e:
         raise OSError(f"Failed to create journal directory: {e}")
+
+
+def create_daily_file(target_date: Optional[date] = None) -> str:
+    """
+    Creates a daily journal file with the naming format YYYY-MM-DD.md.
+
+    Creates the file if it doesn't exist. If it already exists, returns the path
+    to the existing file.
+
+    Args:
+        target_date: The date for the journal file. If None, uses today's date.
+
+    Returns:
+        str: The absolute path to the created (or existing) daily journal file
+
+    Raises:
+        OSError: If file creation fails due to permissions or other filesystem issues
+    """
+    # Ensure the journal directory exists first
+    journal_dir = ensure_journal_directory()
+
+    # Use today's date if no date is provided
+    if target_date is None:
+        target_date = date.today()
+
+    # Generate the filename in YYYY-MM-DD.md format
+    filename = f"{target_date.strftime('%Y-%m-%d')}.md"
+    file_path = os.path.join(journal_dir, filename)
+
+    try:
+        # Create the file if it doesn't exist (touch behavior)
+        Path(file_path).touch(exist_ok=True)
+        return file_path
+    except OSError as e:
+        raise OSError(f"Failed to create daily journal file {filename}: {e}")
 
 
 def get_journal_directory() -> str:

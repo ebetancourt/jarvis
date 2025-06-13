@@ -4,7 +4,11 @@ from pathlib import Path
 from unittest.mock import patch
 import pytest
 
-from tools.journal_tools import ensure_journal_directory, get_journal_directory
+from tools.journal_tools import (
+    ensure_journal_directory,
+    get_journal_directory,
+    create_daily_file,
+)
 
 
 class TestJournalDirectoryFunctions:
@@ -84,3 +88,89 @@ class TestJournalDirectoryFunctions:
                         OSError, match="Failed to create journal directory"
                     ):
                         ensure_journal_directory()
+
+    def test_create_daily_file_default_date(self):
+        """Test that create_daily_file creates a file with today's date."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Call the function with default date
+                result_path = create_daily_file()
+
+                # Verify the file was created with today's date
+                today = date.today()
+                expected_filename = f"{today.strftime('%Y-%m-%d')}.md"
+                expected_path = os.path.join(temp_dir, "journal", expected_filename)
+
+                assert result_path == expected_path
+                assert os.path.exists(result_path)
+
+    def test_create_daily_file_custom_date(self):
+        """Test that create_daily_file creates a file with a custom date."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Call the function with a custom date
+                test_date = date(2025, 1, 9)
+                result_path = create_daily_file(test_date)
+
+                # Verify the file was created with the custom date
+                expected_filename = "2025-01-09.md"
+                expected_path = os.path.join(temp_dir, "journal", expected_filename)
+
+                assert result_path == expected_path
+                assert os.path.exists(result_path)
+
+    def test_create_daily_file_existing_file(self):
+        """Test that create_daily_file returns existing file path if file exists."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 9)
+
+                # Create the file first time
+                path1 = create_daily_file(test_date)
+
+                # Create the file second time - should return same path
+                path2 = create_daily_file(test_date)
+
+                assert path1 == path2
+                assert os.path.exists(path1)
+
+    def test_create_daily_file_filename_format(self):
+        """Test that create_daily_file generates correct YYYY-MM-DD.md format."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Test various date formats
+                test_cases = [
+                    (date(2025, 1, 9), "2025-01-09.md"),
+                    (date(2024, 12, 25), "2024-12-25.md"),
+                    (date(2023, 6, 30), "2023-06-30.md"),
+                ]
+
+                for test_date, expected_filename in test_cases:
+                    result_path = create_daily_file(test_date)
+                    assert result_path.endswith(expected_filename)
+                    assert os.path.exists(result_path)
+
+    def test_create_daily_file_creates_journal_directory(self):
+        """Test that create_daily_file creates journal directory if it doesn't exist."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Ensure journal directory doesn't exist initially
+                journal_dir = os.path.join(temp_dir, "journal")
+                assert not os.path.exists(journal_dir)
+
+                # Call create_daily_file
+                result_path = create_daily_file(date(2025, 1, 9))
+
+                # Verify journal directory was created
+                assert os.path.exists(journal_dir)
+                assert os.path.exists(result_path)
