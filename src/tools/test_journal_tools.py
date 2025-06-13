@@ -10,6 +10,7 @@ from tools.journal_tools import (
     create_daily_file,
     format_file_title,
     add_timestamp_entry,
+    append_to_existing_file,
 )
 
 
@@ -439,3 +440,115 @@ class TestJournalDirectoryFunctions:
                 assert second_entry_start > 0
                 assert lines[first_entry_end + 1] == ""
                 assert lines[second_entry_start - 1] == ""
+
+    def test_append_to_existing_file_with_content(self):
+        """Test that append_to_existing_file appends to files with existing content."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a test file with some content
+            test_file = os.path.join(temp_dir, "test.md")
+            initial_content = "# Test Title\n\nInitial content"
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(initial_content)
+
+            # Append new content
+            new_content = "## New Section\n\nAppended content"
+            append_to_existing_file(test_file, new_content)
+
+            # Verify the result
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            expected = initial_content + "\n\n" + new_content
+            assert result == expected
+
+    def test_append_to_existing_file_empty_file(self):
+        """Test that append_to_existing_file handles empty files correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create an empty test file
+            test_file = os.path.join(temp_dir, "empty.md")
+            Path(test_file).touch()
+
+            # Append content to empty file
+            content = "# First Content\n\nThis is the first content"
+            append_to_existing_file(test_file, content)
+
+            # Verify the result
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            assert result == content
+
+    def test_append_to_existing_file_nonexistent_file(self):
+        """Test that append_to_existing_file raises error for nonexistent files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            nonexistent_file = os.path.join(temp_dir, "nonexistent.md")
+
+            with pytest.raises(FileNotFoundError, match="Journal file does not exist"):
+                append_to_existing_file(nonexistent_file, "Some content")
+
+    def test_append_to_existing_file_proper_spacing(self):
+        """Test that append_to_existing_file maintains proper spacing between entries."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "spacing.md")
+
+            # Start with initial content
+            initial = "First entry"
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(initial)
+
+            # Append second entry
+            second = "Second entry"
+            append_to_existing_file(test_file, second)
+
+            # Append third entry
+            third = "Third entry"
+            append_to_existing_file(test_file, third)
+
+            # Verify proper spacing
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            expected = "First entry\n\nSecond entry\n\nThird entry"
+            assert result == expected
+
+    def test_append_to_existing_file_whitespace_handling(self):
+        """Test that append_to_existing_file handles whitespace correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "whitespace.md")
+
+            # Create file with trailing whitespace
+            initial = "Initial content   \n\n  "
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(initial)
+
+            # Append new content
+            new_content = "New content"
+            append_to_existing_file(test_file, new_content)
+
+            # Verify whitespace is handled properly (existing trimmed)
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            expected = "Initial content\n\nNew content"
+            assert result == expected
+
+    def test_append_to_existing_file_multiline_content(self):
+        """Test append_to_existing_file with multiline content."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "multiline.md")
+
+            # Initial multiline content
+            initial = "# Title\n\nFirst paragraph.\n\nSecond paragraph."
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(initial)
+
+            # Append multiline content
+            new_content = "## New Section\n\nThird paragraph.\n\nFourth paragraph."
+            append_to_existing_file(test_file, new_content)
+
+            # Verify result
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            expected = initial + "\n\n" + new_content
+            assert result == expected

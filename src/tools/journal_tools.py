@@ -157,42 +157,81 @@ def add_timestamp_entry(
         file_size = os.path.getsize(file_path)
         is_new_file = file_size == 0
 
-        # Read existing content if file has content
-        existing_content = ""
-        if not is_new_file:
-            with open(file_path, "r", encoding="utf-8") as f:
-                existing_content = f.read().strip()
-
-        # Build the new content
-        new_content_parts = []
+        # Build the new entry content
+        entry_parts = []
 
         # Add title if this is a new file
         if is_new_file:
             title = format_file_title(target_date)
-            new_content_parts.append(title)
-            new_content_parts.append("")  # Empty line after title
-        elif existing_content:
-            # Keep existing content
-            new_content_parts.append(existing_content)
-            new_content_parts.append("")  # Empty line before new entry
+            entry_parts.append(title)
+            entry_parts.append("")  # Empty line after title
 
         # Add timestamp heading
         timestamp = target_time.strftime("%H:%M:%S")
-        new_content_parts.append(f"## {timestamp}")
-        new_content_parts.append("")  # Empty line after timestamp
+        entry_parts.append(f"## {timestamp}")
+        entry_parts.append("")  # Empty line after timestamp
 
         # Add the entry content
-        new_content_parts.append(content)
+        entry_parts.append(content)
 
-        # Write the complete content back to the file
-        complete_content = "\n".join(new_content_parts)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(complete_content)
+        # Combine entry parts
+        entry_content = "\n".join(entry_parts)
+
+        # Use append function for consistent file handling
+        if is_new_file:
+            # For new files, write directly (no existing content to append to)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(entry_content)
+        else:
+            # For existing files, use the append utility
+            append_to_existing_file(file_path, entry_content)
 
         return file_path
 
     except OSError as e:
         raise OSError(f"Failed to add timestamp entry to journal file: {e}")
+
+
+def append_to_existing_file(file_path: str, content: str) -> None:
+    """
+    Appends content to an existing file with proper formatting.
+
+    Reads the existing file content, adds appropriate spacing, and appends the new
+    content. Handles empty files and ensures proper line separation between entries.
+
+    Args:
+        file_path: Absolute path to the file to append to
+        content: The content to append to the file
+
+    Raises:
+        OSError: If file operations fail due to permissions or other filesystem issues
+        FileNotFoundError: If the specified file doesn't exist
+    """
+    try:
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Journal file does not exist: {file_path}")
+
+        # Read existing content
+        with open(file_path, "r", encoding="utf-8") as f:
+            existing_content = f.read().strip()
+
+        # Build the new content
+        if existing_content:
+            # File has content, add spacing before new content
+            new_content = existing_content + "\n\n" + content
+        else:
+            # File is empty, just add the content
+            new_content = content
+
+        # Write the complete content back to the file
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+    except FileNotFoundError:
+        raise
+    except OSError as e:
+        raise OSError(f"Failed to append to journal file {file_path}: {e}")
 
 
 def get_journal_directory() -> str:

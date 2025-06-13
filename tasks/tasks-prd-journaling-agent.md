@@ -4,8 +4,8 @@
 
 - `src/agents/journaling_agent.py` - Main journaling agent implementation with LangGraph integration
 - `src/agents/journaling_agent.test.py` - Unit tests for the journaling agent
-- `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, and timestamped entry functions)
-- `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 22 tests passing)
+- `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, and file appending functions)
+- `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 28 tests passing)
 - `src/agents/agents.py` - Updated to include the new journaling agent in the agent registry
 - `src/data/journal/` - Directory for storing journal markdown files (to be created)
 
@@ -23,7 +23,7 @@
   - [x] 1.2 Implement `create_daily_file()` function that generates `YYYY-MM-DD.md` files
   - [x] 1.3 Implement `format_file_title()` function to create titles like "# Friday, 13th of June 2025"
   - [x] 1.4 Implement `add_timestamp_entry()` function to add entries with `## HH:MM:SS` format
-  - [ ] 1.5 Implement `append_to_existing_file()` function for multiple daily entries
+  - [x] 1.5 Implement `append_to_existing_file()` function for multiple daily entries
   - [ ] 1.6 Add error handling for file permissions, disk space, and directory creation issues
   - [ ] 1.7 Write unit tests for all file management functions
 
