@@ -1,7 +1,7 @@
 import os
 import stat
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, time
 from typing import Optional
 from common.data import DATA_DIR
 
@@ -119,6 +119,80 @@ def format_file_title(target_date: Optional[date] = None) -> str:
 
     # Format the complete title
     return f"# {day_of_week}, {cardinal_date} of {month_name} {year}"
+
+
+def add_timestamp_entry(
+    content: str, target_date: Optional[date] = None, target_time: Optional[time] = None
+) -> str:
+    """
+    Adds a timestamped entry to a daily journal file.
+
+    Creates the daily file if it doesn't exist, adds the file title if it's the first
+    entry of the day, then adds a timestamp heading and the entry content.
+
+    Args:
+        content: The journal entry content to add
+        target_date: The date for the journal entry. If None, uses today's date.
+        target_time: The time for the timestamp. If None, uses current time.
+
+    Returns:
+        str: The absolute path to the journal file that was updated
+
+    Raises:
+        OSError: If file operations fail due to permissions or other filesystem issues
+    """
+    # Use today's date if no date is provided
+    if target_date is None:
+        target_date = date.today()
+
+    # Use current time if no time is provided
+    if target_time is None:
+        target_time = datetime.now().time()
+
+    # Get the daily file path
+    file_path = create_daily_file(target_date)
+
+    try:
+        # Check if file is empty (new file needs title)
+        file_size = os.path.getsize(file_path)
+        is_new_file = file_size == 0
+
+        # Read existing content if file has content
+        existing_content = ""
+        if not is_new_file:
+            with open(file_path, "r", encoding="utf-8") as f:
+                existing_content = f.read().strip()
+
+        # Build the new content
+        new_content_parts = []
+
+        # Add title if this is a new file
+        if is_new_file:
+            title = format_file_title(target_date)
+            new_content_parts.append(title)
+            new_content_parts.append("")  # Empty line after title
+        elif existing_content:
+            # Keep existing content
+            new_content_parts.append(existing_content)
+            new_content_parts.append("")  # Empty line before new entry
+
+        # Add timestamp heading
+        timestamp = target_time.strftime("%H:%M:%S")
+        new_content_parts.append(f"## {timestamp}")
+        new_content_parts.append("")  # Empty line after timestamp
+
+        # Add the entry content
+        new_content_parts.append(content)
+
+        # Write the complete content back to the file
+        complete_content = "\n".join(new_content_parts)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(complete_content)
+
+        return file_path
+
+    except OSError as e:
+        raise OSError(f"Failed to add timestamp entry to journal file: {e}")
 
 
 def get_journal_directory() -> str:

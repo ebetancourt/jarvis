@@ -9,6 +9,7 @@ from tools.journal_tools import (
     get_journal_directory,
     create_daily_file,
     format_file_title,
+    add_timestamp_entry,
 )
 
 
@@ -258,3 +259,183 @@ class TestJournalDirectoryFunctions:
         # Should not contain unexpected characters
         assert "\n" not in result
         assert "\t" not in result
+
+    def test_add_timestamp_entry_new_file(self):
+        """Test that add_timestamp_entry creates a new file with title and entry."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 15)
+                test_time = time(9, 30, 45)
+                content = "This is my first journal entry."
+
+                result_path = add_timestamp_entry(content, test_date, test_time)
+
+                # Verify file was created
+                assert os.path.exists(result_path)
+
+                # Read and verify content
+                with open(result_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+
+                # Should contain title, timestamp, and content
+                assert "# Wednesday, 15th of January 2025" in file_content
+                assert "## 09:30:45" in file_content
+                assert content in file_content
+
+    def test_add_timestamp_entry_append_to_existing(self):
+        """Test add_timestamp_entry appends to existing file without duplicating title."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 15)
+
+                # Add first entry
+                content1 = "First entry of the day."
+                time1 = time(9, 30, 45)
+                result_path = add_timestamp_entry(content1, test_date, time1)
+
+                # Add second entry
+                content2 = "Second entry of the day."
+                time2 = time(14, 15, 30)
+                result_path2 = add_timestamp_entry(content2, test_date, time2)
+
+                # Should be same file
+                assert result_path == result_path2
+
+                # Read and verify content
+                with open(result_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+
+                # Should contain both entries but only one title
+                title_count = file_content.count("# Wednesday, 15th of January 2025")
+                assert title_count == 1
+
+                assert "## 09:30:45" in file_content
+                assert "## 14:15:30" in file_content
+                assert content1 in file_content
+                assert content2 in file_content
+
+    def test_add_timestamp_entry_default_parameters(self):
+        """Test add_timestamp_entry uses current date and time when not specified."""
+        from datetime import datetime
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                content = "Entry with default parameters."
+
+                # Mock datetime.now() to control the current time
+                mock_now = datetime(2025, 6, 13, 17, 45, 30)
+                with patch("tools.journal_tools.datetime") as mock_datetime:
+                    mock_datetime.now.return_value = mock_now
+                    mock_datetime.side_effect = lambda *args, **kw: datetime(
+                        *args, **kw
+                    )
+
+                    result_path = add_timestamp_entry(content)
+
+                # Verify file was created with today's date
+                assert "2025-06-13.md" in result_path
+
+                # Read and verify content
+                with open(result_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+
+                # Should use current date and time
+                assert "# Friday, 13th of June 2025" in file_content
+                assert "## 17:45:30" in file_content
+                assert content in file_content
+
+    def test_add_timestamp_entry_custom_date_time(self):
+        """Test that add_timestamp_entry uses custom date and time correctly."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2024, 12, 25)
+                test_time = time(23, 59, 59)
+                content = "Christmas evening reflection."
+
+                result_path = add_timestamp_entry(content, test_date, test_time)
+
+                # Verify correct file was created
+                assert "2024-12-25.md" in result_path
+
+                # Read and verify content
+                with open(result_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+
+                assert "# Wednesday, 25th of December 2024" in file_content
+                assert "## 23:59:59" in file_content
+                assert content in file_content
+
+    def test_add_timestamp_entry_file_structure(self):
+        """Test that add_timestamp_entry creates proper file structure."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 15)
+                test_time = time(9, 30, 45)
+                content = "Testing file structure."
+
+                result_path = add_timestamp_entry(content, test_date, test_time)
+
+                # Read content and verify structure
+                with open(result_path, "r", encoding="utf-8") as f:
+                    lines = f.read().split("\n")
+
+                # Expected structure:
+                # Line 0: # Title
+                # Line 1: Empty
+                # Line 2: ## Timestamp
+                # Line 3: Empty
+                # Line 4: Content
+                assert lines[0].startswith("# ")
+                assert lines[1] == ""
+                assert lines[2].startswith("## ")
+                assert lines[3] == ""
+                assert lines[4] == content
+
+    def test_add_timestamp_entry_multiple_entries_structure(self):
+        """Test file structure with multiple entries."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 15)
+
+                # Add first entry
+                content1 = "First entry."
+                time1 = time(9, 30, 45)
+                result_path = add_timestamp_entry(content1, test_date, time1)
+
+                # Add second entry
+                content2 = "Second entry."
+                time2 = time(14, 15, 30)
+                add_timestamp_entry(content2, test_date, time2)
+
+                # Read and verify structure
+                with open(result_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+
+                # Verify proper spacing between entries
+                lines = file_content.split("\n")
+
+                # Find the end of first entry and start of second entry
+                first_entry_end = -1
+                second_entry_start = -1
+                for i, line in enumerate(lines):
+                    if line == content1:
+                        first_entry_end = i
+                    if line == "## 14:15:30":
+                        second_entry_start = i
+                        break
+
+                # Should have empty line between entries
+                assert first_entry_end > 0
+                assert second_entry_start > 0
+                assert lines[first_entry_end + 1] == ""
+                assert lines[second_entry_start - 1] == ""
