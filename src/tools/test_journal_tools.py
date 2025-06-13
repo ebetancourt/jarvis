@@ -11,6 +11,8 @@ from tools.journal_tools import (
     format_file_title,
     add_timestamp_entry,
     append_to_existing_file,
+    check_disk_space,
+    check_directory_permissions,
 )
 
 
@@ -552,3 +554,165 @@ class TestJournalDirectoryFunctions:
 
             expected = initial + "\n\n" + new_content
             assert result == expected
+
+    def test_check_disk_space_sufficient_space(self):
+        """Test that check_disk_space returns True when enough space is available."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Check for a small amount of space (should be available)
+            result = check_disk_space(temp_dir, 1024)  # 1KB
+            assert result is True
+
+    def test_check_disk_space_minimal_requirement(self):
+        """Test check_disk_space with very small space requirement."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Check for 1 byte (should always be available)
+            result = check_disk_space(temp_dir, 1)
+            assert result is True
+
+    def test_check_disk_space_invalid_path(self):
+        """Test check_disk_space with invalid path (should return True as fallback)."""
+        invalid_path = "/nonexistent/path/that/does/not/exist"
+        result = check_disk_space(invalid_path, 1024)
+        assert result is True  # Should return True as fallback when cannot check
+
+    def test_check_directory_permissions_readable_directory(self):
+        """Test check_directory_permissions on a readable directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            readable, writable, executable = check_directory_permissions(temp_dir)
+            # Temp directory should be readable, writable, and executable
+            assert readable is True
+            assert writable is True
+            assert executable is True
+
+    def test_check_directory_permissions_nonexistent_directory(self):
+        """Test check_directory_permissions on nonexistent directory."""
+        nonexistent_dir = "/nonexistent/directory/path"
+        readable, writable, executable = check_directory_permissions(nonexistent_dir)
+        # Should return False for all permissions
+        assert readable is False
+        assert writable is False
+        assert executable is False
+
+    def test_enhanced_permission_error_handling(self):
+        """Test enhanced permission error handling in ensure_journal_directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Mock check_directory_permissions to return no write permission
+                with patch(
+                    "tools.journal_tools.check_directory_permissions"
+                ) as mock_check:
+                    mock_check.return_value = (
+                        True,
+                        False,
+                        True,
+                    )  # readable, not writable, executable
+
+                    with pytest.raises(
+                        PermissionError,
+                        match="No write permission for parent directory",
+                    ):
+                        ensure_journal_directory()
+
+    def test_enhanced_disk_space_error_handling(self):
+        """Test enhanced disk space error handling in ensure_journal_directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Mock check_disk_space to return insufficient space
+                with patch("tools.journal_tools.check_disk_space") as mock_check:
+                    mock_check.return_value = False
+
+                    with pytest.raises(
+                        OSError,
+                        match="Insufficient disk space to create journal directory",
+                    ):
+                        ensure_journal_directory()
+
+    def test_create_daily_file_disk_space_error(self):
+        """Test create_daily_file with insufficient disk space."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 15)
+
+                # Mock check_disk_space to return insufficient space
+                with patch("tools.journal_tools.check_disk_space") as mock_check:
+                    mock_check.return_value = False
+
+                    with pytest.raises(
+                        OSError,
+                        match="Insufficient disk space to create journal directory",
+                    ):
+                        create_daily_file(test_date)
+
+    def test_create_daily_file_permission_error(self):
+        """Test create_daily_file with permission error."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 15)
+
+                # First ensure the journal directory exists
+                ensure_journal_directory()
+
+                # Mock check_directory_permissions to return no write permission
+                with patch(
+                    "tools.journal_tools.check_directory_permissions"
+                ) as mock_check:
+                    mock_check.return_value = (
+                        True,
+                        False,
+                        True,
+                    )  # readable, not writable, executable
+
+                    with pytest.raises(
+                        PermissionError,
+                        match="No write permission for parent directory",
+                    ):
+                        create_daily_file(test_date)
+
+    def test_append_to_existing_file_permission_errors(self):
+        """Test append_to_existing_file with various permission errors."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create a test file
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write("Initial content")
+
+            # Test read permission error
+            with patch("os.access") as mock_access:
+                mock_access.side_effect = lambda path, mode: mode != os.R_OK
+
+                with pytest.raises(
+                    PermissionError, match="No read permission for file"
+                ):
+                    append_to_existing_file(test_file, "New content")
+
+            # Test write permission error
+            with patch("os.access") as mock_access:
+                mock_access.side_effect = lambda path, mode: mode != os.W_OK
+
+                with pytest.raises(
+                    PermissionError, match="No write permission for file"
+                ):
+                    append_to_existing_file(test_file, "New content")
+
+    def test_append_to_existing_file_disk_space_error(self):
+        """Test append_to_existing_file with insufficient disk space."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create a test file
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write("Initial content")
+
+            # Mock check_disk_space to return insufficient space
+            with patch("tools.journal_tools.check_disk_space") as mock_check:
+                mock_check.return_value = False
+
+                with pytest.raises(
+                    OSError, match="Insufficient disk space to append to file"
+                ):
+                    append_to_existing_file(test_file, "New content")

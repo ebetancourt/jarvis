@@ -1,9 +1,49 @@
 import os
 import stat
+import errno
+import shutil
 from pathlib import Path
 from datetime import date, datetime, time
 from typing import Optional
 from common.data import DATA_DIR
+
+
+def check_disk_space(path: str, required_bytes: int = 1024 * 1024) -> bool:
+    """
+    Checks if there's enough disk space available at the given path.
+
+    Args:
+        path: Path to check disk space for
+        required_bytes: Minimum required bytes (default: 1MB)
+
+    Returns:
+        bool: True if enough space is available, False otherwise
+    """
+    try:
+        _, _, free_bytes = shutil.disk_usage(path)
+        return free_bytes >= required_bytes
+    except OSError:
+        # If we can't check disk space, assume it's available
+        return True
+
+
+def check_directory_permissions(directory: str) -> tuple[bool, bool, bool]:
+    """
+    Checks read, write, and execute permissions for a directory.
+
+    Args:
+        directory: Path to the directory to check
+
+    Returns:
+        tuple[bool, bool, bool]: (readable, writable, executable) permissions
+    """
+    try:
+        readable = os.access(directory, os.R_OK)
+        writable = os.access(directory, os.W_OK)
+        executable = os.access(directory, os.X_OK)
+        return readable, writable, executable
+    except OSError:
+        return False, False, False
 
 
 def ensure_journal_directory() -> str:
@@ -26,6 +66,23 @@ def ensure_journal_directory() -> str:
     journal_dir = Path(os.path.join(DATA_DIR, "journal"))
 
     try:
+        # Check if parent directory has enough disk space
+        parent_dir = journal_dir.parent
+        if not check_disk_space(str(parent_dir)):
+            raise OSError(
+                f"Insufficient disk space to create journal directory at {journal_dir}"
+            )
+
+        # Check parent directory permissions before attempting to create subdirectory
+        if parent_dir.exists():
+            readable, writable, executable = check_directory_permissions(
+                str(parent_dir)
+            )
+            if not writable:
+                raise PermissionError(
+                    f"No write permission for parent directory {parent_dir}"
+                )
+
         # Create directory if it doesn't exist (parents=True creates intermediates)
         journal_dir.mkdir(parents=True, exist_ok=True)
 
@@ -39,11 +96,32 @@ def ensure_journal_directory() -> str:
         return str(journal_dir.absolute())
 
     except PermissionError as e:
-        raise PermissionError(
-            f"Unable to create or set permissions for journal directory: {e}"
-        )
+        # Enhanced permission error handling
+        if "parent directory" in str(e):
+            raise e  # Re-raise our custom permission error
+        else:
+            raise PermissionError(
+                f"Unable to create or set permissions for journal directory "
+                f"{journal_dir}: {e}"
+            )
     except OSError as e:
-        raise OSError(f"Failed to create journal directory: {e}")
+        # Enhanced OSError handling with specific error codes
+        if e.errno == errno.ENOSPC:
+            raise OSError(
+                f"No space left on device to create journal directory {journal_dir}"
+            )
+        elif e.errno == errno.EACCES:
+            raise PermissionError(
+                f"Access denied when creating journal directory {journal_dir}"
+            )
+        elif e.errno == errno.EROFS:
+            raise OSError(
+                f"Read-only file system, cannot create journal directory {journal_dir}"
+            )
+        elif "Insufficient disk space" in str(e):
+            raise e  # Re-raise our custom disk space error
+        else:
+            raise OSError(f"Failed to create journal directory {journal_dir}: {e}")
 
 
 def create_daily_file(target_date: Optional[date] = None) -> str:
@@ -74,11 +152,34 @@ def create_daily_file(target_date: Optional[date] = None) -> str:
     file_path = os.path.join(journal_dir, filename)
 
     try:
+        # Check disk space before creating file
+        if not check_disk_space(journal_dir):
+            raise OSError(f"Insufficient disk space to create journal file {filename}")
+
+        # Check directory permissions
+        readable, writable, executable = check_directory_permissions(journal_dir)
+        if not writable:
+            raise PermissionError(
+                f"No write permission for journal directory {journal_dir}"
+            )
+
         # Create the file if it doesn't exist (touch behavior)
         Path(file_path).touch(exist_ok=True)
         return file_path
+    except PermissionError:
+        raise  # Re-raise permission errors as-is
     except OSError as e:
-        raise OSError(f"Failed to create daily journal file {filename}: {e}")
+        # Enhanced OSError handling
+        if e.errno == errno.ENOSPC:
+            raise OSError(f"No space left on device to create file {filename}")
+        elif e.errno == errno.EACCES:
+            raise PermissionError(f"Access denied when creating file {filename}")
+        elif e.errno == errno.EROFS:
+            raise OSError(f"Read-only file system, cannot create file {filename}")
+        elif "Insufficient disk space" in str(e):
+            raise e  # Re-raise our custom disk space error
+        else:
+            raise OSError(f"Failed to create daily journal file {filename}: {e}")
 
 
 def format_file_title(target_date: Optional[date] = None) -> str:
@@ -154,8 +255,14 @@ def add_timestamp_entry(
 
     try:
         # Check if file is empty (new file needs title)
-        file_size = os.path.getsize(file_path)
-        is_new_file = file_size == 0
+        try:
+            file_size = os.path.getsize(file_path)
+            is_new_file = file_size == 0
+        except OSError as e:
+            if e.errno == errno.EACCES:
+                raise PermissionError(f"Access denied when accessing file {file_path}")
+            else:
+                raise OSError(f"Cannot access file {file_path}: {e}")
 
         # Build the new entry content
         entry_parts = []
@@ -179,17 +286,34 @@ def add_timestamp_entry(
 
         # Use append function for consistent file handling
         if is_new_file:
-            # For new files, write directly (no existing content to append to)
+            # For new files, check permissions and disk space first
+            file_dir = os.path.dirname(file_path)
+            if not check_disk_space(file_dir, len(entry_content)):
+                raise OSError("Insufficient disk space to write journal entry")
+
+            # Write directly (no existing content to append to)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(entry_content)
         else:
-            # For existing files, use the append utility
+            # For existing files, use the append utility (it has its own checks)
             append_to_existing_file(file_path, entry_content)
 
         return file_path
 
+    except (PermissionError, FileNotFoundError):
+        raise  # Re-raise these specific errors as-is
     except OSError as e:
-        raise OSError(f"Failed to add timestamp entry to journal file: {e}")
+        # Enhanced OSError handling
+        if e.errno == errno.ENOSPC:
+            raise OSError("No space left on device to add journal entry")
+        elif e.errno == errno.EACCES:
+            raise PermissionError("Access denied when writing journal entry")
+        elif e.errno == errno.EROFS:
+            raise OSError("Read-only file system, cannot write journal entry")
+        elif "Insufficient disk space" in str(e):
+            raise e  # Re-raise our custom disk space error
+        else:
+            raise OSError(f"Failed to add timestamp entry to journal file: {e}")
 
 
 def append_to_existing_file(file_path: str, content: str) -> None:
@@ -212,6 +336,18 @@ def append_to_existing_file(file_path: str, content: str) -> None:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Journal file does not exist: {file_path}")
 
+        # Check file permissions
+        if not os.access(file_path, os.R_OK):
+            raise PermissionError(f"No read permission for file {file_path}")
+        if not os.access(file_path, os.W_OK):
+            raise PermissionError(f"No write permission for file {file_path}")
+
+        # Check disk space before writing
+        file_dir = os.path.dirname(file_path)
+        estimated_size = len(content) * 2  # Rough estimate with existing content
+        if not check_disk_space(file_dir, estimated_size):
+            raise OSError(f"Insufficient disk space to append to file {file_path}")
+
         # Read existing content
         with open(file_path, "r", encoding="utf-8") as f:
             existing_content = f.read().strip()
@@ -228,10 +364,20 @@ def append_to_existing_file(file_path: str, content: str) -> None:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-    except FileNotFoundError:
-        raise
+    except (FileNotFoundError, PermissionError):
+        raise  # Re-raise these specific errors as-is
     except OSError as e:
-        raise OSError(f"Failed to append to journal file {file_path}: {e}")
+        # Enhanced OSError handling
+        if e.errno == errno.ENOSPC:
+            raise OSError(f"No space left on device to append to file {file_path}")
+        elif e.errno == errno.EACCES:
+            raise PermissionError(f"Access denied when writing to file {file_path}")
+        elif e.errno == errno.EROFS:
+            raise OSError(f"Read-only file system, cannot write to file {file_path}")
+        elif "Insufficient disk space" in str(e):
+            raise e  # Re-raise our custom disk space error
+        else:
+            raise OSError(f"Failed to append to journal file {file_path}: {e}")
 
 
 def get_journal_directory() -> str:

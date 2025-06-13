@@ -4,8 +4,8 @@
 
 - `src/agents/journaling_agent.py` - Main journaling agent implementation with LangGraph integration
 - `src/agents/journaling_agent.test.py` - Unit tests for the journaling agent
-- `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, and file appending functions)
-- `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 28 tests passing)
+- `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, file appending, and enhanced error handling for permissions/disk space)
+- `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 39 tests passing)
 - `src/agents/agents.py` - Updated to include the new journaling agent in the agent registry
 - `src/data/journal/` - Directory for storing journal markdown files (to be created)
 
@@ -18,14 +18,14 @@
 
 ## Tasks
 
-- [ ] 1.0 Set up core file management and storage infrastructure
+- [x] 1.0 Set up core file management and storage infrastructure
   - [x] 1.1 Create a function that ensures the existence of the `/src/data/journal/` directory structure with proper permissions
   - [x] 1.2 Implement `create_daily_file()` function that generates `YYYY-MM-DD.md` files
   - [x] 1.3 Implement `format_file_title()` function to create titles like "# Friday, 13th of June 2025"
   - [x] 1.4 Implement `add_timestamp_entry()` function to add entries with `## HH:MM:SS` format
   - [x] 1.5 Implement `append_to_existing_file()` function for multiple daily entries
-  - [ ] 1.6 Add error handling for file permissions, disk space, and directory creation issues
-  - [ ] 1.7 Write unit tests for all file management functions
+  - [x] 1.6 Add error handling for file permissions, disk space, and directory creation issues
+  - [x] 1.7 Write unit tests for all file management functions
 
 - [ ] 2.0 Implement guided prompting and conversation flow
   - [ ] 2.1 Create main conversation state management using LangGraph
