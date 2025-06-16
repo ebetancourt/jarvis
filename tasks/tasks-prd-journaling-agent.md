@@ -29,7 +29,7 @@
 
 - [ ] 2.0 Implement guided prompting and conversation flow
   - [x] 2.1 Create main conversation state management using LangGraph
-  - [ ] 2.2 Implement `generate_guiding_questions()` function with CBT-style prompts
+  - [x] 2.2 Implement `generate_guiding_questions()` function with CBT-style prompts
   - [ ] 2.3 Implement question flow logic (ask up to 2 questions, then process responses)
   - [ ] 2.4 Add completion signal detection ("I'm Done", empty responses)
   - [ ] 2.5 Create confirmation message system ("Great, saving this entry!")
