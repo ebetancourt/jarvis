@@ -37,12 +37,12 @@
   - [x] 2.7 Implement conversation memory to avoid repeating questions within a session
   - [x] 2.8 Write unit tests for conversation flow and question generation
 
-- [ ] 3.0 Build content processing and summarization capabilities
+- [x] 3.0 Build content processing and summarization capabilities
   - [x] 3.1 Implement `count_words()` function to check if entry exceeds 150 words
   - [x] 3.2 Create `generate_summary()` function using AI to summarize long entries
   - [x] 3.3 Ensure summaries are less than 1/5 the length of original entry
-  - [ ] 3.4 Implement `format_summary_section()` to add "### Summary" heading
-  - [ ] 3.5 Integrate summarization into the entry saving workflow
+  - [x] 3.4 Implement `format_summary_section()` to add "### Summary" heading
+  - [ ] 3.5 Integrate summary functionality into the main workflow
   - [ ] 3.6 Add configuration for summary length ratios and word count thresholds
   - [ ] 3.7 Write unit tests for summarization logic and formatting
 

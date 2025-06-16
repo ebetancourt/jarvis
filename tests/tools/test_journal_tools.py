@@ -21,6 +21,8 @@ from tools.journal_tools import (
     exceeds_word_limit,
     generate_summary,
     validate_summary_length,
+    format_summary_section,
+    generate_formatted_summary,
 )
 
 
@@ -1014,3 +1016,88 @@ class TestSummarization:
 
         # Empty original
         assert validate_summary_length("", "summary", 0.2) == False
+
+    def test_format_summary_section_basic_formatting(self):
+        """Test that format_summary_section creates proper Markdown format."""
+        summary_text = "This is a test summary with important insights."
+
+        result = format_summary_section(summary_text)
+
+        # Check the formatted structure
+        expected = "### Summary\n\nThis is a test summary with important insights."
+        assert result == expected
+
+        # Check that it starts with the heading
+        assert result.startswith("### Summary\n\n")
+
+        # Check that the summary text is included
+        assert summary_text in result
+
+    def test_format_summary_section_whitespace_handling(self):
+        """Test that format_summary_section handles whitespace correctly."""
+        # Test with leading/trailing whitespace
+        summary_with_whitespace = "   This summary has extra whitespace.   \n\n"
+
+        result = format_summary_section(summary_with_whitespace)
+
+        # Should trim whitespace but preserve the content
+        expected = "### Summary\n\nThis summary has extra whitespace."
+        assert result == expected
+
+    def test_format_summary_section_multiline_text(self):
+        """Test format_summary_section with multiline summary text."""
+        multiline_summary = """This is a longer summary.
+
+        It spans multiple lines and includes various insights about the day."""
+
+        result = format_summary_section(multiline_summary)
+
+        # Should preserve the multiline structure
+        assert result.startswith("### Summary\n\n")
+        assert "This is a longer summary." in result
+        assert "It spans multiple lines" in result
+        assert "insights about the day." in result
+
+    def test_format_summary_section_empty_input(self):
+        """Test that format_summary_section raises ValueError for empty input."""
+        test_cases = ["", "   ", "\t\n\r", None]
+
+        for empty_text in test_cases:
+            if empty_text is None:
+                with pytest.raises(
+                    ValueError, match="Cannot format empty summary text"
+                ):
+                    format_summary_section(empty_text)
+            else:
+                with pytest.raises(
+                    ValueError, match="Cannot format empty summary text"
+                ):
+                    format_summary_section(empty_text)
+
+    def test_format_summary_section_special_characters(self):
+        """Test format_summary_section with special characters and formatting."""
+        summary_with_special = "Summary with *emphasis*, **bold**, and `code` elements."
+
+        result = format_summary_section(summary_with_special)
+
+        # Should preserve Markdown formatting within the summary
+        expected = (
+            "### Summary\n\nSummary with *emphasis*, **bold**, and `code` elements."
+        )
+        assert result == expected
+
+    def test_format_summary_section_consistency(self):
+        """Test that format_summary_section produces consistent output."""
+        test_summary = "Consistent formatting test summary."
+
+        # Call multiple times to ensure consistency
+        result1 = format_summary_section(test_summary)
+        result2 = format_summary_section(test_summary)
+        result3 = format_summary_section(test_summary)
+
+        # All results should be identical
+        assert result1 == result2 == result3
+
+        # And should match expected format
+        expected = "### Summary\n\nConsistent formatting test summary."
+        assert result1 == expected

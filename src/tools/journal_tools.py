@@ -451,6 +451,35 @@ def validate_summary_length(
     return summary_word_count <= max_allowed_words
 
 
+def format_summary_section(summary_text: str) -> str:
+    """
+    Formats a summary text with proper heading and structure for journal entries.
+
+    Creates a properly formatted summary section with a Markdown heading and
+    appropriate spacing. This ensures consistent formatting across all journal
+    entries that include summaries.
+
+    Args:
+        summary_text: The summary text to format
+
+    Returns:
+        str: Formatted summary section with heading and proper spacing
+
+    Raises:
+        ValueError: If summary_text is empty or contains only whitespace
+    """
+    if not summary_text or not summary_text.strip():
+        raise ValueError("Cannot format empty summary text")
+
+    # Clean up the summary text
+    clean_summary = summary_text.strip()
+
+    # Create the formatted section with Markdown heading
+    formatted_section = f"### Summary\n\n{clean_summary}"
+
+    return formatted_section
+
+
 def generate_summary(text: str, max_summary_ratio: float = 0.2) -> str:
     """
     Generates an AI-powered summary of a journal entry.
@@ -538,3 +567,30 @@ Please provide a thoughtful summary that the writer would find valuable for futu
             raise OSError(f"Failed to generate summary due to AI model error: {e}")
         else:
             raise OSError(f"Unexpected error during summary generation: {e}")
+
+
+def generate_formatted_summary(text: str, max_summary_ratio: float = 0.2) -> str:
+    """
+    Generates and formats a complete summary section for journal entries.
+
+    Combines summary generation and formatting into a single function that
+    produces a ready-to-use summary section with proper Markdown heading.
+
+    Args:
+        text: The journal entry text to summarize
+        max_summary_ratio: Maximum ratio of summary to original text (default: 0.2)
+
+    Returns:
+        str: Complete formatted summary section with heading
+
+    Raises:
+        ValueError: If the text is empty or too short to meaningfully summarize
+        OSError: If the AI model is unavailable or API calls fail
+    """
+    # Generate the summary
+    summary = generate_summary(text, max_summary_ratio)
+
+    # Format it with proper heading
+    formatted_summary = format_summary_section(summary)
+
+    return formatted_summary
