@@ -3,6 +3,10 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 import pytest
+import sys
+
+# Add src to path for importing the source modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from tools.journal_tools import (
     ensure_journal_directory,
@@ -288,7 +292,8 @@ class TestJournalDirectoryFunctions:
                 assert content in file_content
 
     def test_add_timestamp_entry_append_to_existing(self):
-        """Test add_timestamp_entry appends to existing file without duplicating title."""
+        """Test add_timestamp_entry appends to existing file without duplicating
+        title."""
         from datetime import date, time
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -489,7 +494,8 @@ class TestJournalDirectoryFunctions:
                 append_to_existing_file(nonexistent_file, "Some content")
 
     def test_append_to_existing_file_proper_spacing(self):
-        """Test that append_to_existing_file maintains proper spacing between entries."""
+        """Test that append_to_existing_file maintains proper spacing between
+        entries."""
         with tempfile.TemporaryDirectory() as temp_dir:
             test_file = os.path.join(temp_dir, "spacing.md")
 
