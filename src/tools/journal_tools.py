@@ -388,3 +388,43 @@ def get_journal_directory() -> str:
         str: The absolute path to the journal directory
     """
     return os.path.join(DATA_DIR, "journal")
+
+
+def count_words(text: str) -> int:
+    """
+    Counts the number of words in a text string.
+
+    Words are defined as sequences of non-whitespace characters separated by
+    whitespace. This function handles multiple consecutive spaces, tabs, and
+    newlines correctly.
+
+    Args:
+        text: The text string to count words in
+
+    Returns:
+        int: The number of words in the text
+    """
+    if not text or not text.strip():
+        return 0
+
+    # Split on whitespace and filter out empty strings
+    words = text.split()
+    return len(words)
+
+
+def exceeds_word_limit(text: str, word_limit: int = 150) -> bool:
+    """
+    Checks if a text entry exceeds the specified word limit.
+
+    This function is primarily used to determine if a journal entry should
+    be summarized based on its length.
+
+    Args:
+        text: The text string to check
+        word_limit: The maximum number of words allowed (default: 150)
+
+    Returns:
+        bool: True if the text exceeds the word limit, False otherwise
+    """
+    word_count = count_words(text)
+    return word_count > word_limit

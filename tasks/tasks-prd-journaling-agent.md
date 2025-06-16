@@ -4,7 +4,7 @@
 
 - `src/agents/journaling_agent.py` - Main journaling agent implementation with LangGraph integration (✓ Created with conversation state management, LangGraph agent setup, and guided prompting framework)
 - `tests/agents/test_journaling_agent.py` - Unit tests for the journaling agent (✓ Created with comprehensive test coverage for conversation flow, question generation, state management, and integration scenarios)
-- `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, file appending, and enhanced error handling for permissions/disk space)
+- `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, file appending, word counting functions, and enhanced error handling for permissions/disk space)
 - `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 39 tests passing)
 - `src/agents/agents.py` - Updated to include the new journaling agent in the agent registry
 - `src/data/journal/` - Directory for storing journal markdown files (to be created)
@@ -38,7 +38,7 @@
   - [x] 2.8 Write unit tests for conversation flow and question generation
 
 - [ ] 3.0 Build content processing and summarization capabilities
-  - [ ] 3.1 Implement `count_words()` function to check if entry exceeds 150 words
+  - [x] 3.1 Implement `count_words()` function to check if entry exceeds 150 words
   - [ ] 3.2 Create `generate_summary()` function using AI to summarize long entries
   - [ ] 3.3 Ensure summaries are less than 1/5 the length of original entry
   - [ ] 3.4 Implement `format_summary_section()` to add "### Summary" heading

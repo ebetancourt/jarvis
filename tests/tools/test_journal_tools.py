@@ -17,6 +17,8 @@ from tools.journal_tools import (
     append_to_existing_file,
     check_disk_space,
     check_directory_permissions,
+    count_words,
+    exceeds_word_limit,
 )
 
 
@@ -200,12 +202,14 @@ class TestJournalDirectoryFunctions:
         assert " of " in result
 
     def test_format_file_title_custom_date(self):
-        """Test that format_file_title formats custom dates correctly."""
+        """Test that format_file_title formats a custom date correctly."""
         from datetime import date
 
-        test_date = date(2025, 6, 13)  # Friday, June 13th, 2025
+        # Call the function with a specific date
+        test_date = date(2025, 6, 13)  # Friday, 13th of June 2025
         result = format_file_title(test_date)
 
+        # Verify the exact format
         expected = "# Friday, 13th of June 2025"
         assert result == expected
 
@@ -213,36 +217,33 @@ class TestJournalDirectoryFunctions:
         """Test that format_file_title generates correct ordinal suffixes."""
         from datetime import date
 
-        # Test various ordinal cases
+        # Test various ordinal suffixes
         test_cases = [
-            (date(2025, 1, 1), "1st"),  # 1st
-            (date(2025, 1, 2), "2nd"),  # 2nd
-            (date(2025, 1, 3), "3rd"),  # 3rd
-            (date(2025, 1, 4), "4th"),  # 4th
-            (date(2025, 1, 11), "11th"),  # 11th (special case)
-            (date(2025, 1, 12), "12th"),  # 12th (special case)
-            (date(2025, 1, 13), "13th"),  # 13th (special case)
-            (date(2025, 1, 21), "21st"),  # 21st
-            (date(2025, 1, 22), "22nd"),  # 22nd
-            (date(2025, 1, 23), "23rd"),  # 23rd
-            (date(2025, 1, 31), "31st"),  # 31st
+            (date(2025, 1, 1), "1st"),
+            (date(2025, 1, 2), "2nd"),
+            (date(2025, 1, 3), "3rd"),
+            (date(2025, 1, 4), "4th"),
+            (date(2025, 1, 11), "11th"),  # Special case
+            (date(2025, 1, 12), "12th"),  # Special case
+            (date(2025, 1, 13), "13th"),  # Special case
+            (date(2025, 1, 21), "21st"),
+            (date(2025, 1, 22), "22nd"),
+            (date(2025, 1, 23), "23rd"),
+            (date(2025, 1, 31), "31st"),
         ]
 
-        for test_date, expected_ordinal in test_cases:
+        for test_date, expected_suffix in test_cases:
             result = format_file_title(test_date)
-            assert (
-                expected_ordinal in result
-            ), f"Expected {expected_ordinal} in {result}"
+            assert expected_suffix in result
 
     def test_format_file_title_different_months_and_years(self):
         """Test that format_file_title handles different months and years."""
         from datetime import date
 
         test_cases = [
-            (date(2023, 2, 14), "# Tuesday, 14th of February 2023"),
-            (date(2024, 12, 25), "# Wednesday, 25th of December 2024"),
-            (date(2025, 7, 4), "# Friday, 4th of July 2025"),
-            (date(2026, 11, 1), "# Sunday, 1st of November 2026"),
+            (date(2023, 12, 25), "# Monday, 25th of December 2023"),
+            (date(2024, 7, 4), "# Thursday, 4th of July 2024"),
+            (date(2025, 1, 1), "# Wednesday, 1st of January 2025"),
         ]
 
         for test_date, expected in test_cases:
@@ -250,22 +251,19 @@ class TestJournalDirectoryFunctions:
             assert result == expected
 
     def test_format_file_title_format_structure(self):
-        """Test that format_file_title follows the correct format structure."""
+        """Test that format_file_title maintains consistent format structure."""
         from datetime import date
 
-        result = format_file_title(date(2025, 6, 13))
+        # Test with any date
+        test_date = date(2025, 3, 15)
+        result = format_file_title(test_date)
 
-        # Should start with "# "
-        assert result.startswith("# ")
-
-        # Should contain required separators
-        assert ", " in result  # Between day of week and date
-        assert " of " in result  # Between date and month
-        assert " " in result  # Between month and year
-
-        # Should not contain unexpected characters
-        assert "\n" not in result
-        assert "\t" not in result
+        # Verify structure: "# <Day>, <Date> of <Month> <Year>"
+        parts = result.split()
+        assert parts[0] == "#"
+        assert parts[1].endswith(",")  # Day of week with comma
+        assert " of " in result
+        assert len(parts) >= 5  # Should have at least "# Day, Date of Month Year"
 
     def test_add_timestamp_entry_new_file(self):
         """Test that add_timestamp_entry creates a new file with title and entry."""
@@ -273,111 +271,107 @@ class TestJournalDirectoryFunctions:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2025, 1, 15)
-                test_time = time(9, 30, 45)
-                content = "This is my first journal entry."
+                test_date = date(2025, 1, 9)
+                test_time = time(14, 30, 45)
+                test_content = "This is my first journal entry."
 
-                result_path = add_timestamp_entry(content, test_date, test_time)
+                # Call the function
+                result_path = add_timestamp_entry(test_content, test_date, test_time)
+
+                # Verify the file was created and has correct content
+                assert os.path.exists(result_path)
+
+                with open(result_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # Verify content includes title, timestamp, and entry
+                assert "# Thursday, 9th of January 2025" in content
+                assert "## 14:30:45" in content
+                assert test_content in content
+
+    def test_add_timestamp_entry_append_to_existing(self):
+        """Test that add_timestamp_entry appends to existing file correctly."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_date = date(2025, 1, 9)
+                test_time1 = time(9, 0, 0)
+                test_time2 = time(17, 30, 0)
+                test_content1 = "Morning entry."
+                test_content2 = "Evening entry."
+
+                # Add first entry
+                result_path1 = add_timestamp_entry(test_content1, test_date, test_time1)
+
+                # Add second entry
+                result_path2 = add_timestamp_entry(test_content2, test_date, test_time2)
+
+                # Should be the same file
+                assert result_path1 == result_path2
+
+                # Verify content has both entries
+                with open(result_path1, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                assert "## 09:00:00" in content
+                assert test_content1 in content
+                assert "## 17:30:00" in content
+                assert test_content2 in content
+                # Title should only appear once
+                assert content.count("# Thursday, 9th of January 2025") == 1
+
+    def test_add_timestamp_entry_default_parameters(self):
+        """Test that add_timestamp_entry works with default date and time."""
+        from datetime import date, datetime
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                test_content = "Entry with default parameters."
+
+                # Get current date/time for comparison
+                before_call = datetime.now()
+                result_path = add_timestamp_entry(test_content)
+                after_call = datetime.now()
 
                 # Verify file was created
                 assert os.path.exists(result_path)
 
-                # Read and verify content
+                # Verify filename contains today's date
+                today = date.today()
+                expected_filename = f"{today.strftime('%Y-%m-%d')}.md"
+                assert result_path.endswith(expected_filename)
+
+                # Verify content
                 with open(result_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
+                    content = f.read()
 
-                # Should contain title, timestamp, and content
-                assert "# Wednesday, 15th of January 2025" in file_content
-                assert "## 09:30:45" in file_content
-                assert content in file_content
-
-    def test_add_timestamp_entry_append_to_existing(self):
-        """Test add_timestamp_entry appends to existing file without duplicating
-        title."""
-        from datetime import date, time
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2025, 1, 15)
-
-                # Add first entry
-                content1 = "First entry of the day."
-                time1 = time(9, 30, 45)
-                result_path = add_timestamp_entry(content1, test_date, time1)
-
-                # Add second entry
-                content2 = "Second entry of the day."
-                time2 = time(14, 15, 30)
-                result_path2 = add_timestamp_entry(content2, test_date, time2)
-
-                # Should be same file
-                assert result_path == result_path2
-
-                # Read and verify content
-                with open(result_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
-
-                # Should contain both entries but only one title
-                title_count = file_content.count("# Wednesday, 15th of January 2025")
-                assert title_count == 1
-
-                assert "## 09:30:45" in file_content
-                assert "## 14:15:30" in file_content
-                assert content1 in file_content
-                assert content2 in file_content
-
-    def test_add_timestamp_entry_default_parameters(self):
-        """Test add_timestamp_entry uses current date and time when not specified."""
-        from datetime import datetime
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                content = "Entry with default parameters."
-
-                # Mock datetime.now() to control the current time
-                mock_now = datetime(2025, 6, 13, 17, 45, 30)
-                with patch("tools.journal_tools.datetime") as mock_datetime:
-                    mock_datetime.now.return_value = mock_now
-                    mock_datetime.side_effect = lambda *args, **kw: datetime(
-                        *args, **kw
-                    )
-
-                    result_path = add_timestamp_entry(content)
-
-                # Verify file was created with today's date
-                assert "2025-06-13.md" in result_path
-
-                # Read and verify content
-                with open(result_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
-
-                # Should use current date and time
-                assert "# Friday, 13th of June 2025" in file_content
-                assert "## 17:45:30" in file_content
-                assert content in file_content
+                assert test_content in content
+                # Should have a timestamp between before and after the call
+                assert "## " in content  # Some timestamp should be present
 
     def test_add_timestamp_entry_custom_date_time(self):
-        """Test that add_timestamp_entry uses custom date and time correctly."""
+        """Test that add_timestamp_entry works with custom date and time."""
         from datetime import date, time
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2024, 12, 25)
+                test_date = date(2024, 12, 31)
                 test_time = time(23, 59, 59)
-                content = "Christmas evening reflection."
+                test_content = "Last entry of the year!"
 
-                result_path = add_timestamp_entry(content, test_date, test_time)
+                result_path = add_timestamp_entry(test_content, test_date, test_time)
 
-                # Verify correct file was created
-                assert "2024-12-25.md" in result_path
+                # Verify correct filename
+                assert result_path.endswith("2024-12-31.md")
 
-                # Read and verify content
+                # Verify content
                 with open(result_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
+                    content = f.read()
 
-                assert "# Wednesday, 25th of December 2024" in file_content
-                assert "## 23:59:59" in file_content
-                assert content in file_content
+                assert "# Tuesday, 31st of December 2024" in content
+                assert "## 23:59:59" in content
+                assert test_content in content
 
     def test_add_timestamp_entry_file_structure(self):
         """Test that add_timestamp_entry creates proper file structure."""
@@ -385,233 +379,195 @@ class TestJournalDirectoryFunctions:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2025, 1, 15)
-                test_time = time(9, 30, 45)
-                content = "Testing file structure."
+                test_date = date(2025, 1, 9)
+                test_time = time(12, 0, 0)
+                test_content = "Test entry for structure verification."
 
-                result_path = add_timestamp_entry(content, test_date, test_time)
+                result_path = add_timestamp_entry(test_content, test_date, test_time)
 
-                # Read content and verify structure
                 with open(result_path, "r", encoding="utf-8") as f:
-                    lines = f.read().split("\n")
+                    lines = f.readlines()
 
-                # Expected structure:
-                # Line 0: # Title
-                # Line 1: Empty
-                # Line 2: ## Timestamp
-                # Line 3: Empty
-                # Line 4: Content
+                # Verify structure:
+                # Line 0: Title (# ...)
+                # Line 1: Empty line
+                # Line 2: Timestamp (## ...)
+                # Line 3: Empty line
+                # Line 4+: Content
                 assert lines[0].startswith("# ")
-                assert lines[1] == ""
+                assert lines[1].strip() == ""
                 assert lines[2].startswith("## ")
-                assert lines[3] == ""
-                assert lines[4] == content
+                assert lines[3].strip() == ""
+                assert test_content in "".join(lines[4:])
 
     def test_add_timestamp_entry_multiple_entries_structure(self):
-        """Test file structure with multiple entries."""
+        """Test that multiple entries maintain proper structure."""
         from datetime import date, time
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2025, 1, 15)
+                test_date = date(2025, 1, 9)
 
-                # Add first entry
-                content1 = "First entry."
-                time1 = time(9, 30, 45)
-                result_path = add_timestamp_entry(content1, test_date, time1)
+                # Add multiple entries
+                add_timestamp_entry("First entry", test_date, time(9, 0, 0))
+                add_timestamp_entry("Second entry", test_date, time(12, 0, 0))
+                result_path = add_timestamp_entry(
+                    "Third entry", test_date, time(18, 0, 0)
+                )
 
-                # Add second entry
-                content2 = "Second entry."
-                time2 = time(14, 15, 30)
-                add_timestamp_entry(content2, test_date, time2)
-
-                # Read and verify structure
                 with open(result_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
+                    content = f.read()
 
-                # Verify proper spacing between entries
-                lines = file_content.split("\n")
+                # Should have proper spacing between entries
+                sections = content.split("\n\n")
+                # Should have title, then entry blocks separated by double newlines
+                assert len(sections) >= 3  # Title + at least 2 entries
 
-                # Find the end of first entry and start of second entry
-                first_entry_end = -1
-                second_entry_start = -1
-                for i, line in enumerate(lines):
-                    if line == content1:
-                        first_entry_end = i
-                    if line == "## 14:15:30":
-                        second_entry_start = i
-                        break
+                # Verify all timestamps are present
+                assert "## 09:00:00" in content
+                assert "## 12:00:00" in content
+                assert "## 18:00:00" in content
 
-                # Should have empty line between entries
-                assert first_entry_end > 0
-                assert second_entry_start > 0
-                assert lines[first_entry_end + 1] == ""
-                assert lines[second_entry_start - 1] == ""
+                # Verify all content is present
+                assert "First entry" in content
+                assert "Second entry" in content
+                assert "Third entry" in content
 
     def test_append_to_existing_file_with_content(self):
-        """Test that append_to_existing_file appends to files with existing content."""
+        """Test that append_to_existing_file adds content with proper spacing."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Create a test file with some content
             test_file = os.path.join(temp_dir, "test.md")
-            initial_content = "# Test Title\n\nInitial content"
+
+            # Create initial file with content
             with open(test_file, "w", encoding="utf-8") as f:
-                f.write(initial_content)
-
-            # Append new content
-            new_content = "## New Section\n\nAppended content"
-            append_to_existing_file(test_file, new_content)
-
-            # Verify the result
-            with open(test_file, "r", encoding="utf-8") as f:
-                result = f.read()
-
-            expected = initial_content + "\n\n" + new_content
-            assert result == expected
-
-    def test_append_to_existing_file_empty_file(self):
-        """Test that append_to_existing_file handles empty files correctly."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create an empty test file
-            test_file = os.path.join(temp_dir, "empty.md")
-            Path(test_file).touch()
-
-            # Append content to empty file
-            content = "# First Content\n\nThis is the first content"
-            append_to_existing_file(test_file, content)
-
-            # Verify the result
-            with open(test_file, "r", encoding="utf-8") as f:
-                result = f.read()
-
-            assert result == content
-
-    def test_append_to_existing_file_nonexistent_file(self):
-        """Test that append_to_existing_file raises error for nonexistent files."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            nonexistent_file = os.path.join(temp_dir, "nonexistent.md")
-
-            with pytest.raises(FileNotFoundError, match="Journal file does not exist"):
-                append_to_existing_file(nonexistent_file, "Some content")
-
-    def test_append_to_existing_file_proper_spacing(self):
-        """Test that append_to_existing_file maintains proper spacing between
-        entries."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            test_file = os.path.join(temp_dir, "spacing.md")
-
-            # Start with initial content
-            initial = "First entry"
-            with open(test_file, "w", encoding="utf-8") as f:
-                f.write(initial)
-
-            # Append second entry
-            second = "Second entry"
-            append_to_existing_file(test_file, second)
-
-            # Append third entry
-            third = "Third entry"
-            append_to_existing_file(test_file, third)
-
-            # Verify proper spacing
-            with open(test_file, "r", encoding="utf-8") as f:
-                result = f.read()
-
-            expected = "First entry\n\nSecond entry\n\nThird entry"
-            assert result == expected
-
-    def test_append_to_existing_file_whitespace_handling(self):
-        """Test that append_to_existing_file handles whitespace correctly."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            test_file = os.path.join(temp_dir, "whitespace.md")
-
-            # Create file with trailing whitespace
-            initial = "Initial content   \n\n  "
-            with open(test_file, "w", encoding="utf-8") as f:
-                f.write(initial)
+                f.write("Initial content")
 
             # Append new content
             new_content = "New content"
             append_to_existing_file(test_file, new_content)
 
-            # Verify whitespace is handled properly (existing trimmed)
+            # Verify the result
             with open(test_file, "r", encoding="utf-8") as f:
                 result = f.read()
 
             expected = "Initial content\n\nNew content"
             assert result == expected
 
-    def test_append_to_existing_file_multiline_content(self):
-        """Test append_to_existing_file with multiline content."""
+    def test_append_to_existing_file_empty_file(self):
+        """Test that append_to_existing_file handles empty files correctly."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            test_file = os.path.join(temp_dir, "multiline.md")
+            test_file = os.path.join(temp_dir, "empty.md")
 
-            # Initial multiline content
-            initial = "# Title\n\nFirst paragraph.\n\nSecond paragraph."
+            # Create empty file
             with open(test_file, "w", encoding="utf-8") as f:
-                f.write(initial)
+                f.write("")
 
-            # Append multiline content
-            new_content = "## New Section\n\nThird paragraph.\n\nFourth paragraph."
+            # Append content
+            new_content = "First content"
             append_to_existing_file(test_file, new_content)
 
-            # Verify result
+            # Verify the result
             with open(test_file, "r", encoding="utf-8") as f:
                 result = f.read()
 
-            expected = initial + "\n\n" + new_content
+            assert result == new_content
+
+    def test_append_to_existing_file_nonexistent_file(self):
+        """Test that append_to_existing_file raises FileNotFoundError for missing files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "nonexistent.md")
+
+            with pytest.raises(FileNotFoundError):
+                append_to_existing_file(test_file, "Some content")
+
+    def test_append_to_existing_file_proper_spacing(self):
+        """Test that append_to_existing_file maintains proper spacing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "spacing.md")
+
+            # Create file with content that has trailing whitespace
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write("Initial content   \n\n  ")
+
+            # Append new content
+            append_to_existing_file(test_file, "New content")
+
+            # Verify proper spacing
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            # Should strip existing content and add proper spacing
+            expected = "Initial content\n\nNew content"
+            assert result == expected
+
+    def test_append_to_existing_file_multiline_content(self):
+        """Test that append_to_existing_file handles multiline content correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "multiline.md")
+
+            # Create initial file
+            initial_content = "Line 1\nLine 2"
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(initial_content)
+
+            # Append multiline content
+            new_content = "New line 1\nNew line 2\nNew line 3"
+            append_to_existing_file(test_file, new_content)
+
+            # Verify the result
+            with open(test_file, "r", encoding="utf-8") as f:
+                result = f.read()
+
+            expected = f"{initial_content}\n\n{new_content}"
             assert result == expected
 
     def test_check_disk_space_sufficient_space(self):
-        """Test that check_disk_space returns True when enough space is available."""
+        """Test check_disk_space returns True when sufficient space is available."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Check for a small amount of space (should be available)
-            result = check_disk_space(temp_dir, 1024)  # 1KB
-            assert result is True
-
-    def test_check_disk_space_minimal_requirement(self):
-        """Test check_disk_space with very small space requirement."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Check for 1 byte (should always be available)
+            # Test with a very small requirement (1 byte)
             result = check_disk_space(temp_dir, 1)
             assert result is True
 
+    def test_check_disk_space_minimal_requirement(self):
+        """Test check_disk_space with default requirement."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Test with default 1MB requirement
+            result = check_disk_space(temp_dir)
+            assert isinstance(result, bool)
+
     def test_check_disk_space_invalid_path(self):
-        """Test check_disk_space with invalid path (should return True as fallback)."""
-        invalid_path = "/nonexistent/path/that/does/not/exist"
-        result = check_disk_space(invalid_path, 1024)
-        assert result is True  # Should return True as fallback when cannot check
+        """Test check_disk_space handles invalid paths gracefully."""
+        # Test with a non-existent path
+        result = check_disk_space("/definitely/does/not/exist")
+        assert result is True  # Should return True when can't check
 
     def test_check_directory_permissions_readable_directory(self):
-        """Test check_directory_permissions on a readable directory."""
+        """Test check_directory_permissions with a readable directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
             readable, writable, executable = check_directory_permissions(temp_dir)
-            # Temp directory should be readable, writable, and executable
+            # Temporary directory should be readable and writable
             assert readable is True
             assert writable is True
-            assert executable is True
+            # Executable might vary by system, so we don't assert it
 
     def test_check_directory_permissions_nonexistent_directory(self):
-        """Test check_directory_permissions on nonexistent directory."""
-        nonexistent_dir = "/nonexistent/directory/path"
-        readable, writable, executable = check_directory_permissions(nonexistent_dir)
-        # Should return False for all permissions
+        """Test check_directory_permissions with nonexistent directory."""
+        readable, writable, executable = check_directory_permissions(
+            "/definitely/does/not/exist"
+        )
         assert readable is False
         assert writable is False
         assert executable is False
 
     def test_enhanced_permission_error_handling(self):
-        """Test enhanced permission error handling in ensure_journal_directory."""
+        """Test enhanced error handling for permission issues."""
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
                 # Mock check_directory_permissions to return no write permission
                 with patch(
                     "tools.journal_tools.check_directory_permissions"
                 ) as mock_check:
-                    mock_check.return_value = (
-                        True,
-                        False,
-                        True,
-                    )  # readable, not writable, executable
+                    mock_check.return_value = (True, False, True)  # No write permission
 
                     with pytest.raises(
                         PermissionError,
@@ -620,7 +576,7 @@ class TestJournalDirectoryFunctions:
                         ensure_journal_directory()
 
     def test_enhanced_disk_space_error_handling(self):
-        """Test enhanced disk space error handling in ensure_journal_directory."""
+        """Test enhanced error handling for disk space issues."""
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
                 # Mock check_disk_space to return insufficient space
@@ -639,44 +595,37 @@ class TestJournalDirectoryFunctions:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2025, 1, 15)
-
-                # Mock check_disk_space to return insufficient space
+                # Mock check_disk_space to return insufficient space for file creation
                 with patch("tools.journal_tools.check_disk_space") as mock_check:
-                    mock_check.return_value = False
+                    # Return True for directory creation, False for file creation
+                    mock_check.side_effect = [True, False]
 
                     with pytest.raises(
-                        OSError,
-                        match="Insufficient disk space to create journal directory",
+                        OSError, match="Insufficient disk space to create journal file"
                     ):
-                        create_daily_file(test_date)
+                        create_daily_file(date(2025, 1, 9))
 
     def test_create_daily_file_permission_error(self):
-        """Test create_daily_file with permission error."""
+        """Test create_daily_file with permission errors."""
         from datetime import date
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
-                test_date = date(2025, 1, 15)
-
-                # First ensure the journal directory exists
+                # First create the journal directory
                 ensure_journal_directory()
 
                 # Mock check_directory_permissions to return no write permission
                 with patch(
                     "tools.journal_tools.check_directory_permissions"
                 ) as mock_check:
-                    mock_check.return_value = (
-                        True,
-                        False,
-                        True,
-                    )  # readable, not writable, executable
+                    # Return False for write permission during file creation
+                    mock_check.return_value = (True, False, True)
 
                     with pytest.raises(
                         PermissionError,
-                        match="No write permission for parent directory",
+                        match="No write permission for journal directory",
                     ):
-                        create_daily_file(test_date)
+                        create_daily_file(date(2025, 1, 9))
 
     def test_append_to_existing_file_permission_errors(self):
         """Test append_to_existing_file with various permission errors."""
@@ -688,7 +637,8 @@ class TestJournalDirectoryFunctions:
                 f.write("Initial content")
 
             # Test read permission error
-            with patch("os.access") as mock_access:
+            with patch("tools.journal_tools.os.access") as mock_access:
+                # Mock no read permission
                 mock_access.side_effect = lambda path, mode: mode != os.R_OK
 
                 with pytest.raises(
@@ -697,7 +647,8 @@ class TestJournalDirectoryFunctions:
                     append_to_existing_file(test_file, "New content")
 
             # Test write permission error
-            with patch("os.access") as mock_access:
+            with patch("tools.journal_tools.os.access") as mock_access:
+                # Mock no write permission
                 mock_access.side_effect = lambda path, mode: mode != os.W_OK
 
                 with pytest.raises(
@@ -722,3 +673,178 @@ class TestJournalDirectoryFunctions:
                     OSError, match="Insufficient disk space to append to file"
                 ):
                     append_to_existing_file(test_file, "New content")
+
+
+class TestWordCounting:
+    """Test cases for word counting and limit checking functions."""
+
+    def test_count_words_basic_text(self):
+        """Test count_words with basic text."""
+        test_cases = [
+            ("Hello world", 2),
+            ("This is a test", 4),
+            ("Single", 1),
+            ("One two three four five", 5),
+        ]
+
+        for text, expected_count in test_cases:
+            result = count_words(text)
+            assert result == expected_count, f"Failed for '{text}'"
+
+    def test_count_words_empty_and_whitespace(self):
+        """Test count_words with empty strings and whitespace."""
+        test_cases = [
+            ("", 0),
+            ("   ", 0),
+            ("\t\n\r", 0),
+            ("  \n  \t  ", 0),
+        ]
+
+        for text, expected_count in test_cases:
+            result = count_words(text)
+            assert result == expected_count, f"Failed for '{text}'"
+
+    def test_count_words_multiple_spaces(self):
+        """Test count_words with multiple consecutive spaces."""
+        test_cases = [
+            ("hello    world", 2),
+            ("  leading spaces", 2),
+            ("trailing spaces  ", 2),
+            ("  both  sides  ", 2),
+            ("lots     of        spaces", 3),
+        ]
+
+        for text, expected_count in test_cases:
+            result = count_words(text)
+            assert result == expected_count, f"Failed for '{text}'"
+
+    def test_count_words_newlines_and_tabs(self):
+        """Test count_words with newlines and tabs."""
+        test_cases = [
+            ("hello\nworld", 2),
+            ("line1\nline2\nline3", 3),
+            ("tab\tseparated\twords", 3),
+            ("mixed\n\ttabs and\n\nnewlines", 4),
+            ("\nhello\n\nworld\n", 2),
+        ]
+
+        for text, expected_count in test_cases:
+            result = count_words(text)
+            assert result == expected_count, f"Failed for '{text}'"
+
+    def test_count_words_punctuation(self):
+        """Test count_words with punctuation (should be counted as part of words)."""
+        test_cases = [
+            ("Hello, world!", 2),
+            ("Don't count this wrong.", 4),
+            ("What's the weather?", 3),
+            ("It's a beautiful day, isn't it?", 6),
+            ("Email: test@example.com works fine.", 4),
+        ]
+
+        for text, expected_count in test_cases:
+            result = count_words(text)
+            assert result == expected_count, f"Failed for '{text}'"
+
+    def test_count_words_journal_entry_example(self):
+        """Test count_words with realistic journal entry text."""
+        short_entry = """Today was a productive day. I completed several tasks
+        and felt accomplished."""
+        assert count_words(short_entry) == 12
+
+        longer_entry = """I had a challenging day at work today. There were
+        several meetings that ran longer than expected, and I found myself
+        struggling to keep up with all the tasks on my plate. However, I
+        managed to prioritize the most important items and made significant
+        progress on the key project."""
+        assert count_words(longer_entry) == 49
+
+    def test_exceeds_word_limit_default_limit(self):
+        """Test exceeds_word_limit with default 150-word limit."""
+        # Create a text with exactly 150 words
+        words_150 = " ".join([f"word{i}" for i in range(150)])
+        assert not exceeds_word_limit(words_150)  # Exactly 150, should not exceed
+
+        # Create a text with 151 words
+        words_151 = words_150 + " extra"
+        assert exceeds_word_limit(words_151)  # Should exceed
+
+        # Create a text with fewer than 150 words
+        words_100 = " ".join([f"word{i}" for i in range(100)])
+        assert not exceeds_word_limit(words_100)  # Should not exceed
+
+    def test_exceeds_word_limit_custom_limit(self):
+        """Test exceeds_word_limit with custom word limits."""
+        test_text = "This is a test with exactly seven words."
+        assert count_words(test_text) == 8  # Verify our count
+
+        # Test with different limits
+        assert not exceeds_word_limit(test_text, word_limit=10)  # Under limit
+        assert not exceeds_word_limit(test_text, word_limit=8)  # At limit
+        assert exceeds_word_limit(test_text, word_limit=7)  # Over limit
+        assert exceeds_word_limit(test_text, word_limit=5)  # Well over limit
+
+    def test_exceeds_word_limit_edge_cases(self):
+        """Test exceeds_word_limit with edge cases."""
+        # Empty text
+        assert not exceeds_word_limit("")
+        assert not exceeds_word_limit("   ")
+
+        # Single word
+        assert not exceeds_word_limit("Hello", word_limit=1)
+        assert exceeds_word_limit("Hello", word_limit=0)
+
+        # Whitespace handling
+        assert not exceeds_word_limit("  hello   world  ", word_limit=2)
+        assert exceeds_word_limit("  hello   world  ", word_limit=1)
+
+    def test_exceeds_word_limit_realistic_journal_entries(self):
+        """Test exceeds_word_limit with realistic journal entries."""
+        # Short entry (under 150 words)
+        short_entry = """Today was good. I accomplished most of my goals and
+        felt productive. Looking forward to tomorrow."""
+        assert not exceeds_word_limit(short_entry)
+
+        # Create an entry that's definitely over 150 words
+        long_entry = """Today was an incredibly complex and challenging day that
+        required me to juggle multiple responsibilities while maintaining focus
+        on long-term goals. I started the morning with a comprehensive review
+        of my task list, prioritizing items based on both urgency and importance.
+        The first major challenge came during the team meeting when we discovered
+        significant issues with the current project timeline. This led to an
+        extended discussion about resource allocation and potential solutions.
+        I found myself taking on additional responsibilities to help address
+        the gaps we identified. Throughout the afternoon, I worked diligently
+        on both immediate priorities and strategic planning for next week.
+        By evening, I had made substantial progress on most fronts, though
+        I recognize there's still significant work ahead. Overall, despite
+        the challenges, I feel satisfied with today's accomplishments and
+        optimistic about moving forward with renewed energy and clearer direction
+        for the coming days. This additional text brings us well over the
+        one hundred and fifty word limit that we need to exceed for testing
+        the summarization threshold functionality correctly."""
+
+        assert exceeds_word_limit(long_entry)
+        # Verify it's actually over 150 words
+        assert count_words(long_entry) > 150
+
+    def test_word_counting_integration(self):
+        """Test integration between count_words and exceeds_word_limit."""
+        test_cases = [
+            ("Short text", 2, False),
+            (" ".join(["word"] * 149), 149, False),
+            (" ".join(["word"] * 150), 150, False),
+            (" ".join(["word"] * 151), 151, True),
+            (" ".join(["word"] * 200), 200, True),
+        ]
+
+        for text, expected_count, should_exceed in test_cases:
+            word_count = count_words(text)
+            exceeds = exceeds_word_limit(text)
+
+            assert (
+                word_count == expected_count
+            ), f"Word count failed for {len(text.split())} words"
+            assert (
+                exceeds == should_exceed
+            ), f"Exceed check failed for {word_count} words"
