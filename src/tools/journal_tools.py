@@ -944,3 +944,382 @@ def add_metadata_to_entry(
     # Only update if we have metadata to add
     if metadata:
         update_frontmatter(file_path, metadata)
+
+
+def search_by_date_range(
+    start_date: Optional[Union[str, date]] = None,
+    end_date: Optional[Union[str, date]] = None,
+    journal_dir: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Search for journal entries within a date range.
+
+    Args:
+        start_date: Start date (inclusive). Can be string "YYYY-MM-DD" or date object
+        end_date: End date (inclusive). Can be string "YYYY-MM-DD" or date object
+        journal_dir: Optional custom journal directory path
+
+    Returns:
+        List[Dict[str, Any]]: List of journal entries with metadata and file paths
+
+    Raises:
+        ValueError: If date parameters are invalid
+        OSError: If journal directory cannot be accessed
+    """
+    if journal_dir is None:
+        journal_dir = get_journal_directory()
+
+    if not os.path.exists(journal_dir):
+        return []  # No journal directory means no entries
+
+    # Parse and validate date parameters
+    parsed_start_date = _parse_date_parameter(start_date) if start_date else None
+    parsed_end_date = _parse_date_parameter(end_date) if end_date else None
+
+    # Validate date range
+    if parsed_start_date and parsed_end_date and parsed_start_date > parsed_end_date:
+        raise ValueError("Start date cannot be after end date")
+
+    results = []
+
+    try:
+        # Get all .md files in journal directory
+        journal_files = []
+        for filename in os.listdir(journal_dir):
+            if filename.endswith(".md"):
+                journal_files.append(filename)
+
+        # Filter and collect matching entries
+        for filename in journal_files:
+            try:
+                # Extract date from filename (YYYY-MM-DD.md format)
+                file_date_str = filename.replace(".md", "")
+                file_date = _parse_date_parameter(file_date_str)
+
+                # Check if file date is within range
+                if _date_in_range(file_date, parsed_start_date, parsed_end_date):
+                    file_path = os.path.join(journal_dir, filename)
+
+                    # Get metadata for this file
+                    try:
+                        metadata = get_journal_metadata(file_path)
+                        results.append(metadata)
+                    except (OSError, yaml.YAMLError) as e:
+                        # Log error but continue with other files
+                        warnings.warn(f"Could not read metadata from {filename}: {e}")
+                        continue
+
+            except ValueError:
+                # Skip files that don't match date format
+                continue
+
+    except OSError as e:
+        raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
+
+    # Sort results by date (newest first)
+    results.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+    return results
+
+
+def _parse_date_parameter(date_param: Union[str, date]) -> date:
+    """
+    Parse a date parameter that can be either a string or date object.
+
+    Args:
+        date_param: Date as string "YYYY-MM-DD" or date object
+
+    Returns:
+        date: Parsed date object
+
+    Raises:
+        ValueError: If date string is invalid format
+    """
+    if isinstance(date_param, date):
+        return date_param
+
+    if isinstance(date_param, str):
+        try:
+            # Parse YYYY-MM-DD format
+            year, month, day = date_param.split("-")
+            return date(int(year), int(month), int(day))
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid date format '{date_param}'. Expected YYYY-MM-DD")
+
+    raise ValueError(
+        f"Date parameter must be string or date object, got {type(date_param)}"
+    )
+
+
+def _date_in_range(
+    file_date: date, start_date: Optional[date], end_date: Optional[date]
+) -> bool:
+    """
+    Check if a file date falls within the specified range.
+
+    Args:
+        file_date: The date to check
+        start_date: Start of range (inclusive), None means no start limit
+        end_date: End of range (inclusive), None means no end limit
+
+    Returns:
+        bool: True if date is within range
+    """
+    if start_date and file_date < start_date:
+        return False
+
+    if end_date and file_date > end_date:
+        return False
+
+    return True
+
+
+def search_by_keywords(
+    keywords: Union[str, List[str]],
+    case_sensitive: bool = False,
+    search_content: bool = True,
+    search_frontmatter: bool = True,
+    journal_dir: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Search for journal entries containing specific keywords.
+
+    Performs full-text search across journal entry content and/or frontmatter.
+    Supports both single keyword strings and lists of keywords.
+
+    Args:
+        keywords: Keywords to search for (string or list of strings)
+        case_sensitive: Whether search should be case sensitive (default: False)
+        search_content: Whether to search in main content (default: True)
+        search_frontmatter: Whether to search in frontmatter fields (default: True)
+        journal_dir: Optional custom journal directory path
+
+    Returns:
+        List[Dict[str, Any]]: List of matching journal entries with metadata
+
+    Raises:
+        ValueError: If no keywords provided or invalid parameters
+        OSError: If journal directory cannot be accessed
+    """
+    if not keywords:
+        raise ValueError("At least one keyword must be provided")
+
+    # Normalize keywords to list
+    if isinstance(keywords, str):
+        keyword_list = [keywords]
+    else:
+        keyword_list = list(keywords)
+
+    if not keyword_list or all(not k.strip() for k in keyword_list):
+        raise ValueError("Keywords cannot be empty")
+
+    # Clean up keywords
+    clean_keywords = [k.strip() for k in keyword_list if k.strip()]
+
+    if journal_dir is None:
+        journal_dir = get_journal_directory()
+
+    if not os.path.exists(journal_dir):
+        return []  # No journal directory means no entries
+
+    results = []
+
+    try:
+        # Get all .md files in journal directory
+        journal_files = [f for f in os.listdir(journal_dir) if f.endswith(".md")]
+
+        for filename in journal_files:
+            file_path = os.path.join(journal_dir, filename)
+
+            try:
+                # Get metadata and content
+                metadata = get_journal_metadata(file_path)
+                content = extract_content_without_frontmatter(file_path)
+
+                # Check if any keywords match
+                if _file_matches_keywords(
+                    content,
+                    metadata,
+                    clean_keywords,
+                    case_sensitive,
+                    search_content,
+                    search_frontmatter,
+                ):
+                    # Add match score for potential ranking
+                    match_score = _calculate_match_score(
+                        content,
+                        metadata,
+                        clean_keywords,
+                        case_sensitive,
+                        search_content,
+                        search_frontmatter,
+                    )
+                    metadata["match_score"] = match_score
+                    results.append(metadata)
+
+            except (OSError, yaml.YAMLError) as e:
+                # Log error but continue with other files
+                warnings.warn(f"Could not process {filename}: {e}")
+                continue
+
+    except OSError as e:
+        raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
+
+    # Sort results by match score (highest first), then by date (newest first)
+    results.sort(
+        key=lambda x: (-x.get("match_score", 0), x.get("date", "")), reverse=True
+    )
+
+    return results
+
+
+def _file_matches_keywords(
+    content: str,
+    metadata: Dict[str, Any],
+    keywords: List[str],
+    case_sensitive: bool,
+    search_content: bool,
+    search_frontmatter: bool,
+) -> bool:
+    """
+    Check if a journal file matches any of the provided keywords.
+
+    Args:
+        content: Main content of the journal file
+        metadata: File metadata including frontmatter
+        keywords: List of keywords to search for
+        case_sensitive: Whether search is case sensitive
+        search_content: Whether to search main content
+        search_frontmatter: Whether to search frontmatter fields
+
+    Returns:
+        bool: True if file matches any keyword
+    """
+    search_text = ""
+
+    # Build search text based on options
+    if search_content and content:
+        search_text += content
+
+    if search_frontmatter:
+        # Include searchable frontmatter fields
+        frontmatter_text = _extract_searchable_frontmatter_text(metadata)
+        if frontmatter_text:
+            search_text += " " + frontmatter_text
+
+    if not search_text.strip():
+        return False
+
+    # Prepare text for searching
+    if not case_sensitive:
+        search_text = search_text.lower()
+
+    # Check if any keyword matches
+    for keyword in keywords:
+        search_keyword = keyword.lower() if not case_sensitive else keyword
+        if search_keyword in search_text:
+            return True
+
+    return False
+
+
+def _extract_searchable_frontmatter_text(metadata: Dict[str, Any]) -> str:
+    """
+    Extract searchable text from frontmatter metadata.
+
+    Args:
+        metadata: File metadata dictionary
+
+    Returns:
+        str: Combined searchable text from frontmatter fields
+    """
+    searchable_text = []
+
+    # Include mood
+    if metadata.get("mood"):
+        searchable_text.append(str(metadata["mood"]))
+
+    # Include keywords/tags lists
+    for field in ["keywords", "topics", "tags"]:
+        field_value = metadata.get(field, [])
+        if field_value:
+            if isinstance(field_value, list):
+                searchable_text.extend([str(item) for item in field_value])
+            else:
+                searchable_text.append(str(field_value))
+
+    # Include other string fields (but skip technical fields)
+    skip_fields = {
+        "date",
+        "word_count",
+        "file_path",
+        "match_score",
+        "mood",
+        "keywords",
+        "topics",
+        "tags",
+    }
+
+    for key, value in metadata.items():
+        if key not in skip_fields and value:
+            if isinstance(value, str):
+                searchable_text.append(value)
+            elif isinstance(value, list):
+                searchable_text.extend([str(item) for item in value])
+
+    return " ".join(searchable_text)
+
+
+def _calculate_match_score(
+    content: str,
+    metadata: Dict[str, Any],
+    keywords: List[str],
+    case_sensitive: bool,
+    search_content: bool,
+    search_frontmatter: bool,
+) -> int:
+    """
+    Calculate a match score for ranking search results.
+
+    Higher scores indicate better matches. Scoring factors:
+    - Number of keyword matches
+    - Matches in frontmatter vs content
+    - Multiple occurrences of same keyword
+
+    Args:
+        content: Main content of the journal file
+        metadata: File metadata including frontmatter
+        keywords: List of keywords to search for
+        case_sensitive: Whether search is case sensitive
+        search_content: Whether content was searched
+        search_frontmatter: Whether frontmatter was searched
+
+    Returns:
+        int: Match score (higher = better match)
+    """
+    score = 0
+
+    # Prepare search texts
+    content_text = content if search_content else ""
+    frontmatter_text = (
+        _extract_searchable_frontmatter_text(metadata) if search_frontmatter else ""
+    )
+
+    if not case_sensitive:
+        content_text = content_text.lower()
+        frontmatter_text = frontmatter_text.lower()
+
+    for keyword in keywords:
+        search_keyword = keyword.lower() if not case_sensitive else keyword
+
+        # Count matches in content (1 point each)
+        if content_text:
+            content_matches = content_text.count(search_keyword)
+            score += content_matches
+
+        # Count matches in frontmatter (2 points each - more specific)
+        if frontmatter_text:
+            frontmatter_matches = frontmatter_text.count(search_keyword)
+            score += frontmatter_matches * 2
+
+    return score

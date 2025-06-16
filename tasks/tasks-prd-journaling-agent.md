@@ -47,9 +47,9 @@
   - [x] 3.7 Write unit tests for summarization logic and formatting
 
 - [ ] 4.0 Create search and retrieval functionality
-  - [ ] 4.1 Implement frontmatter parsing for mood, keywords, and topics metadata
-  - [ ] 4.2 Create `search_by_date_range()` function with start/end date parameters
-  - [ ] 4.3 Implement `search_by_keywords()` function with full-text search
+  - [x] 4.1 Implement frontmatter parsing for mood, keywords, and topics metadata
+  - [x] 4.2 Create `search_by_date_range()` function with start/end date parameters
+  - [x] 4.3 Implement `search_by_keywords()` function with full-text search
   - [ ] 4.4 Create `search_by_mood()` and `search_by_topics()` functions using frontmatter
   - [ ] 4.5 Implement `format_search_results()` with result count and file list (if <10)
   - [ ] 4.6 Create search result interaction options (full text, all files, ask questions)

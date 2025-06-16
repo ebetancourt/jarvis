@@ -31,6 +31,12 @@ from tools.journal_tools import (
     get_journal_metadata,
     add_metadata_to_entry,
     _normalize_list_field,
+    search_by_date_range,
+    _parse_date_parameter,
+    _date_in_range,
+    search_by_keywords,
+    _extract_searchable_frontmatter_text,
+    _calculate_match_score,
 )
 
 
@@ -1638,7 +1644,7 @@ keywords: ["old"]
 
             content = """---
 mood: productive
-keywords: "work, coding, testing"
+keywords: [work, coding, testing]
 topics: ["software development"]
 custom_field: "custom value"
 ---
@@ -1801,3 +1807,602 @@ keywords: ["old"]
 
         with pytest.raises(FileNotFoundError):
             get_journal_metadata(nonexistent_file)
+
+
+class TestDateRangeSearch:
+    """Test cases for date range search functionality."""
+
+    def test_search_by_date_range_basic_functionality(self):
+        """Test basic date range search with multiple journal files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                journal_dir = os.path.join(temp_dir, "journal")
+                os.makedirs(journal_dir, exist_ok=True)
+
+                # Create test journal files
+                test_files = [
+                    ("2025-01-10.md", "# Entry 1\nContent for Jan 10"),
+                    ("2025-01-15.md", "# Entry 2\nContent for Jan 15"),
+                    ("2025-01-20.md", "# Entry 3\nContent for Jan 20"),
+                    ("2025-02-01.md", "# Entry 4\nContent for Feb 1"),
+                ]
+
+                for filename, content in test_files:
+                    with open(os.path.join(journal_dir, filename), "w") as f:
+                        f.write(content)
+
+                # Test search within range
+                results = search_by_date_range("2025-01-12", "2025-01-25")
+
+                # Should find files from Jan 15 and Jan 20
+                assert len(results) == 2
+                dates = [r["date"] for r in results]
+                assert "2025-01-15" in dates
+                assert "2025-01-20" in dates
+                assert "2025-01-10" not in dates
+                assert "2025-02-01" not in dates
+
+    def test_search_by_date_range_with_date_objects(self):
+        """Test date range search using date objects instead of strings."""
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                journal_dir = os.path.join(temp_dir, "journal")
+                os.makedirs(journal_dir, exist_ok=True)
+
+                # Create test files
+                test_files = ["2025-01-10.md", "2025-01-15.md", "2025-01-20.md"]
+
+                for filename in test_files:
+                    with open(os.path.join(journal_dir, filename), "w") as f:
+                        f.write(f"# Entry\nContent for {filename}")
+
+                # Test with date objects
+                start_date = date(2025, 1, 12)
+                end_date = date(2025, 1, 18)
+
+                results = search_by_date_range(start_date, end_date)
+
+                # Should only find 2025-01-15.md
+                assert len(results) == 1
+                assert results[0]["date"] == "2025-01-15"
+
+    def test_search_by_date_range_open_ended(self):
+        """Test date range search with only start or end date."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                journal_dir = os.path.join(temp_dir, "journal")
+                os.makedirs(journal_dir, exist_ok=True)
+
+                # Create test files
+                test_files = ["2025-01-10.md", "2025-01-15.md", "2025-01-20.md"]
+
+                for filename in test_files:
+                    with open(os.path.join(journal_dir, filename), "w") as f:
+                        f.write(f"# Entry\nContent for {filename}")
+
+                # Test with only start date
+                results = search_by_date_range(start_date="2025-01-15")
+                dates = [r["date"] for r in results]
+                assert "2025-01-15" in dates
+                assert "2025-01-20" in dates
+                assert "2025-01-10" not in dates
+
+                # Test with only end date
+                results = search_by_date_range(end_date="2025-01-15")
+                dates = [r["date"] for r in results]
+                assert "2025-01-10" in dates
+                assert "2025-01-15" in dates
+                assert "2025-01-20" not in dates
+
+    def test_search_by_date_range_no_results(self):
+        """Test date range search that returns no results."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                journal_dir = os.path.join(temp_dir, "journal")
+                os.makedirs(journal_dir, exist_ok=True)
+
+                # Create test file
+                with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                    f.write("# Entry\nContent")
+
+                # Search for dates that don't exist
+                results = search_by_date_range("2025-02-01", "2025-02-28")
+                assert len(results) == 0
+
+    def test_search_by_date_range_all_files(self):
+        """Test date range search with no date constraints."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                journal_dir = os.path.join(temp_dir, "journal")
+                os.makedirs(journal_dir, exist_ok=True)
+
+                # Create test files
+                test_files = ["2025-01-10.md", "2025-01-15.md", "2025-01-20.md"]
+
+                for filename in test_files:
+                    with open(os.path.join(journal_dir, filename), "w") as f:
+                        f.write(f"# Entry\nContent for {filename}")
+
+                # Search with no date constraints
+                results = search_by_date_range()
+
+                # Should return all files, sorted by date (newest first)
+                assert len(results) == 3
+                dates = [r["date"] for r in results]
+                assert dates == ["2025-01-20", "2025-01-15", "2025-01-10"]
+
+    def test_search_by_date_range_with_frontmatter(self):
+        """Test that search includes frontmatter metadata."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                journal_dir = os.path.join(temp_dir, "journal")
+                os.makedirs(journal_dir, exist_ok=True)
+
+                # Create file with frontmatter
+                content = """---
+mood: productive
+keywords: [work, coding]
+topics: ["software development"]
+---
+
+# Daily Entry
+Today I worked on search functionality."""
+
+                with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                    f.write(content)
+
+                results = search_by_date_range()
+
+                assert len(results) == 1
+                result = results[0]
+                assert result["mood"] == "productive"
+                assert result["keywords"] == ["work", "coding"]
+                assert result["topics"] == ["software development"]
+                assert result["word_count"] > 0
+
+    def test_search_by_date_range_invalid_dates(self):
+        """Test error handling for invalid date parameters."""
+        # Test invalid date format
+        with pytest.raises(ValueError, match="Invalid date format"):
+            search_by_date_range("invalid-date")
+
+        # Test start date after end date
+        with pytest.raises(ValueError, match="Start date cannot be after end date"):
+            search_by_date_range("2025-01-20", "2025-01-10")
+
+    def test_search_by_date_range_nonexistent_directory(self):
+        """Test search when journal directory doesn't exist."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Use non-existent directory
+            fake_dir = os.path.join(temp_dir, "nonexistent")
+
+            results = search_by_date_range(journal_dir=fake_dir)
+            assert results == []
+
+    def test_search_by_date_range_malformed_files(self):
+        """Test search with malformed journal files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            # Create valid file
+            with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                f.write("# Valid Entry\nContent")
+
+            # Create file with invalid date format (should be ignored)
+            with open(os.path.join(journal_dir, "invalid-date.md"), "w") as f:
+                f.write("# Invalid Entry\nContent")
+
+            # Create non-markdown file (should be ignored)
+            with open(os.path.join(journal_dir, "not-markdown.txt"), "w") as f:
+                f.write("Not a markdown file")
+
+            results = search_by_date_range(journal_dir=journal_dir)
+
+            # Should only return the valid journal file
+            assert len(results) == 1
+            assert results[0]["date"] == "2025-01-10"
+
+    def test_parse_date_parameter_string_input(self):
+        """Test _parse_date_parameter with string inputs."""
+        from datetime import date
+
+        # Valid date strings
+        result = _parse_date_parameter("2025-01-10")
+        assert result == date(2025, 1, 10)
+
+        # Invalid date strings
+        with pytest.raises(ValueError):
+            _parse_date_parameter("invalid")
+
+        with pytest.raises(ValueError):
+            _parse_date_parameter("2025-13-01")  # Invalid month
+
+    def test_parse_date_parameter_date_object(self):
+        """Test _parse_date_parameter with date object input."""
+        from datetime import date
+
+        test_date = date(2025, 1, 10)
+        result = _parse_date_parameter(test_date)
+        assert result == test_date
+
+    def test_parse_date_parameter_invalid_type(self):
+        """Test _parse_date_parameter with invalid input types."""
+        with pytest.raises(ValueError):
+            _parse_date_parameter(12345)
+
+        with pytest.raises(ValueError):
+            _parse_date_parameter(None)
+
+    def test_date_in_range_function(self):
+        """Test _date_in_range helper function."""
+        from datetime import date
+
+        test_date = date(2025, 1, 15)
+        start_date = date(2025, 1, 10)
+        end_date = date(2025, 1, 20)
+
+        # Date within range
+        assert _date_in_range(test_date, start_date, end_date) is True
+
+        # Date before range
+        assert _date_in_range(date(2025, 1, 5), start_date, end_date) is False
+
+        # Date after range
+        assert _date_in_range(date(2025, 1, 25), start_date, end_date) is False
+
+        # No constraints
+        assert _date_in_range(test_date, None, None) is True
+
+        # Only start date constraint
+        assert _date_in_range(test_date, start_date, None) is True
+        assert _date_in_range(date(2025, 1, 5), start_date, None) is False
+
+        # Only end date constraint
+        assert _date_in_range(test_date, None, end_date) is True
+        assert _date_in_range(date(2025, 1, 25), None, end_date) is False
+
+
+class TestKeywordSearch:
+    """Test cases for keyword search functionality."""
+
+    def test_search_by_keywords_basic_content_search(self):
+        """Test basic keyword search in journal content."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            # Create test files with different content
+            test_files = [
+                (
+                    "2025-01-10.md",
+                    "# Entry 1\nToday I worked on coding projects and debugging.",
+                ),
+                (
+                    "2025-01-15.md",
+                    "# Entry 2\nWent for a walk and enjoyed nature photography.",
+                ),
+                (
+                    "2025-01-20.md",
+                    "# Entry 3\nAttended team meetings and worked on project planning.",
+                ),
+            ]
+
+            for filename, content in test_files:
+                with open(os.path.join(journal_dir, filename), "w") as f:
+                    f.write(content)
+
+            # Test single keyword search
+            results = search_by_keywords("coding", journal_dir=journal_dir)
+            assert len(results) == 1
+            assert results[0]["date"] == "2025-01-10"
+
+            # Test multiple keyword search
+            results = search_by_keywords(
+                ["project", "planning"], journal_dir=journal_dir
+            )
+            assert len(results) == 2
+            dates = [r["date"] for r in results]
+            assert "2025-01-10" in dates  # "projects"
+            assert "2025-01-20" in dates  # "project planning"
+
+    def test_search_by_keywords_frontmatter_search(self):
+        """Test keyword search in frontmatter metadata."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            # Create file with frontmatter
+            content1 = """---
+mood: productive
+keywords: [coding, debugging]
+topics: ["software development"]
+---
+
+# Entry 1
+Today was a good day."""
+
+            content2 = """---
+mood: relaxed
+keywords: [nature, photography]
+topics: ["outdoor activities"]
+---
+
+# Entry 2
+Enjoyed the outdoors."""
+
+            with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                f.write(content1)
+            with open(os.path.join(journal_dir, "2025-01-15.md"), "w") as f:
+                f.write(content2)
+
+            # Search for frontmatter keywords
+            results = search_by_keywords("productive", journal_dir=journal_dir)
+            assert len(results) == 1
+            assert results[0]["date"] == "2025-01-10"
+
+            # Search for keyword in keywords list
+            results = search_by_keywords("photography", journal_dir=journal_dir)
+            assert len(results) == 1
+            assert results[0]["date"] == "2025-01-15"
+
+            # Search for topic
+            results = search_by_keywords("software", journal_dir=journal_dir)
+            assert len(results) == 1
+            assert results[0]["date"] == "2025-01-10"
+
+    def test_search_by_keywords_case_sensitivity(self):
+        """Test case sensitive vs case insensitive search."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            content = "# Entry\nToday I worked on CODING projects."
+            with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                f.write(content)
+
+            # Case insensitive (default)
+            results = search_by_keywords("coding", journal_dir=journal_dir)
+            assert len(results) == 1
+
+            results = search_by_keywords("CODING", journal_dir=journal_dir)
+            assert len(results) == 1
+
+            # Case sensitive
+            results = search_by_keywords(
+                "coding", case_sensitive=True, journal_dir=journal_dir
+            )
+            assert len(results) == 0  # "coding" != "CODING"
+
+            results = search_by_keywords(
+                "CODING", case_sensitive=True, journal_dir=journal_dir
+            )
+            assert len(results) == 1
+
+    def test_search_by_keywords_search_options(self):
+        """Test different search scope options."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            content = """---
+mood: productive
+keywords: [frontmatter_keyword]
+---
+
+# Entry
+This content contains content_keyword."""
+
+            with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                f.write(content)
+
+            # Search only content
+            results = search_by_keywords(
+                "content_keyword",
+                search_content=True,
+                search_frontmatter=False,
+                journal_dir=journal_dir,
+            )
+            assert len(results) == 1
+
+            results = search_by_keywords(
+                "frontmatter_keyword",
+                search_content=True,
+                search_frontmatter=False,
+                journal_dir=journal_dir,
+            )
+            assert len(results) == 0
+
+            # Search only frontmatter
+            results = search_by_keywords(
+                "frontmatter_keyword",
+                search_content=False,
+                search_frontmatter=True,
+                journal_dir=journal_dir,
+            )
+            assert len(results) == 1
+
+            results = search_by_keywords(
+                "content_keyword",
+                search_content=False,
+                search_frontmatter=True,
+                journal_dir=journal_dir,
+            )
+            assert len(results) == 0
+
+    def test_search_by_keywords_match_scoring(self):
+        """Test that results are ranked by match score."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            # File with multiple matches in content
+            content1 = "# Entry 1\nCoding coding coding projects."
+
+            # File with frontmatter match (higher score)
+            content2 = """---
+mood: coding
+---
+
+# Entry 2
+Working on projects."""
+
+            # File with single content match
+            content3 = "# Entry 3\nJust one coding mention."
+
+            files = [
+                ("2025-01-10.md", content1),
+                ("2025-01-15.md", content2),
+                ("2025-01-20.md", content3),
+            ]
+
+            for filename, content in files:
+                with open(os.path.join(journal_dir, filename), "w") as f:
+                    f.write(content)
+
+            results = search_by_keywords("coding", journal_dir=journal_dir)
+
+            # Should have all 3 results
+            assert len(results) == 3
+
+            # Check that results have match scores
+            for result in results:
+                assert "match_score" in result
+                assert result["match_score"] > 0
+
+            # Results should be sorted by match score (highest first)
+            scores = [r["match_score"] for r in results]
+            assert scores == sorted(scores, reverse=True)
+
+    def test_search_by_keywords_empty_results(self):
+        """Test search that returns no results."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            content = "# Entry\nThis entry has no relevant keywords."
+            with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                f.write(content)
+
+            results = search_by_keywords("nonexistent", journal_dir=journal_dir)
+            assert len(results) == 0
+
+    def test_search_by_keywords_error_handling(self):
+        """Test error handling for invalid parameters."""
+        # Empty keywords
+        with pytest.raises(ValueError, match="At least one keyword must be provided"):
+            search_by_keywords("")
+
+        with pytest.raises(ValueError, match="At least one keyword must be provided"):
+            search_by_keywords([])
+
+        with pytest.raises(ValueError, match="Keywords cannot be empty"):
+            search_by_keywords(["", "   "])
+
+        # Non-existent directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_dir = os.path.join(temp_dir, "nonexistent")
+            results = search_by_keywords("test", journal_dir=fake_dir)
+            assert results == []
+
+    def test_search_by_keywords_string_vs_list_input(self):
+        """Test that string and list inputs work equivalently."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            content = "# Entry\nCoding and programming projects."
+            with open(os.path.join(journal_dir, "2025-01-10.md"), "w") as f:
+                f.write(content)
+
+            # Single string
+            results1 = search_by_keywords("coding", journal_dir=journal_dir)
+
+            # List with single item
+            results2 = search_by_keywords(["coding"], journal_dir=journal_dir)
+
+            # Results should be identical
+            assert len(results1) == len(results2) == 1
+            assert results1[0]["date"] == results2[0]["date"]
+
+    def test_search_by_keywords_multiple_files_ranking(self):
+        """Test search across multiple files with proper ranking."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            journal_dir = temp_dir
+
+            # Different files with varying relevance
+            files = [
+                ("2025-01-10.md", "# Entry 1\nCoding is fun."),
+                ("2025-01-15.md", "# Entry 2\nCoding coding coding everywhere."),
+                (
+                    "2025-01-20.md",
+                    """---
+mood: coding
+keywords: [coding]
+---
+
+# Entry 3
+More coding content.""",
+                ),
+            ]
+
+            for filename, content in files:
+                with open(os.path.join(journal_dir, filename), "w") as f:
+                    f.write(content)
+
+            results = search_by_keywords("coding", journal_dir=journal_dir)
+
+            # All files should match
+            assert len(results) == 3
+
+            # Entry 3 should rank highest (frontmatter + content matches)
+            # Entry 2 should be second (multiple content matches)
+            # Entry 1 should be third (single content match)
+            assert results[0]["date"] == "2025-01-20"  # Highest score
+            assert results[1]["date"] == "2025-01-15"  # Multiple matches
+            assert results[2]["date"] == "2025-01-10"  # Single match
+
+    def test_extract_searchable_frontmatter_text(self):
+        """Test the frontmatter text extraction helper function."""
+        metadata = {
+            "mood": "happy",
+            "keywords": ["work", "productivity"],
+            "topics": ["project management"],
+            "tags": ["important"],
+            "custom_field": "custom value",
+            "date": "2025-01-10",  # Should be skipped
+            "word_count": 50,  # Should be skipped
+            "file_path": "/path",  # Should be skipped
+        }
+
+        result = _extract_searchable_frontmatter_text(metadata)
+
+        # Should include all searchable fields
+        assert "happy" in result
+        assert "work" in result
+        assert "productivity" in result
+        assert "project management" in result
+        assert "important" in result
+        assert "custom value" in result
+
+        # Should exclude technical fields
+        assert "2025-01-10" not in result
+        assert "50" not in result
+        assert "/path" not in result
+
+    def test_calculate_match_score(self):
+        """Test the match score calculation function."""
+        content = "This is about coding and programming and coding again."
+        metadata = {"mood": "coding", "keywords": ["programming"], "topics": []}
+
+        # Test score calculation
+        score = _calculate_match_score(
+            content,
+            metadata,
+            ["coding", "programming"],
+            case_sensitive=False,
+            search_content=True,
+            search_frontmatter=True,
+        )
+
+        # Should have:
+        # - 2 "coding" matches in content (2 points)
+        # - 1 "programming" match in content (1 point)
+        # - 1 "coding" match in frontmatter mood (2 points)
+        # - 1 "programming" match in frontmatter keywords (2 points)
+        # Total: 2 + 1 + 2 + 2 = 7 points
+        assert score == 7
