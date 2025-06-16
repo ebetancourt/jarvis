@@ -62,7 +62,7 @@
   - [x] 5.2 Import and configure journal tools as LangGraph tools
   - [x] 5.3 Define agent prompt with journaling-specific instructions and personality
   - [x] 5.4 Update `src/agents/agents.py` to include journaling agent in registry
-  - [ ] 5.5 Add agent description: "A daily journaling assistant with guided prompts"
+  - [x] 5.5 Add agent description: "A daily journaling assistant with guided prompts"
   - [ ] 5.6 Test agent selection and basic functionality through existing interface
   - [ ] 5.7 Implement proper error handling and graceful fallbacks for file operations
   - [ ] 5.8 Write integration tests for the complete journaling workflow

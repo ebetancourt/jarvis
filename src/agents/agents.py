@@ -47,7 +47,7 @@ agents: dict[str, Agent] = {
         graph=kb_agent,
     ),
     "journaling-agent": Agent(
-        description="A daily journaling assistant with guided prompts and automatic summarization",
+        description="A daily journaling assistant with guided prompts",
         graph=journaling_agent,
     ),
 }
