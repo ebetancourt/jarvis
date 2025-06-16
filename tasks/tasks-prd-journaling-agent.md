@@ -44,7 +44,7 @@
   - [x] 3.4 Implement `format_summary_section()` to add "### Summary" heading
   - [x] 3.5 Integrate summary functionality into the main workflow
   - [x] 3.6 Add configuration for summary length ratios and word count thresholds
-  - [ ] 3.7 Write unit tests for summarization logic and formatting
+  - [x] 3.7 Write unit tests for summarization logic and formatting
 
 - [ ] 4.0 Create search and retrieval functionality
   - [ ] 4.1 Implement frontmatter parsing for mood, keywords, and topics metadata
