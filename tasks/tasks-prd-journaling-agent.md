@@ -3,7 +3,7 @@
 ## Relevant Files
 
 - `src/agents/journaling_agent.py` - Main journaling agent implementation with LangGraph integration (✓ Created with conversation state management, LangGraph agent setup, and guided prompting framework)
-- `src/agents/journaling_agent.test.py` - Unit tests for the journaling agent
+- `tests/agents/test_journaling_agent.py` - Unit tests for the journaling agent (✓ Created with comprehensive test coverage for conversation flow, question generation, state management, and integration scenarios)
 - `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, file appending, and enhanced error handling for permissions/disk space)
 - `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 39 tests passing)
 - `src/agents/agents.py` - Updated to include the new journaling agent in the agent registry
@@ -11,7 +11,7 @@
 
 ### Notes
 
-- Unit tests should be placed alongside the code files they are testing
+- Unit tests are organized in the `tests/` directory following the established project structure (e.g., `tests/agents/`, `tests/core/`)
 - Use `pytest` to run tests (following existing codebase patterns)
 - Journal files will be stored in `/src/data/journal/` directory
 - Follow existing agent patterns from `src/agents/jarvis.py` for LangGraph integration
@@ -27,7 +27,7 @@
   - [x] 1.6 Add error handling for file permissions, disk space, and directory creation issues
   - [x] 1.7 Write unit tests for all file management functions
 
-- [ ] 2.0 Implement guided prompting and conversation flow
+- [x] 2.0 Implement guided prompting and conversation flow
   - [x] 2.1 Create main conversation state management using LangGraph
   - [x] 2.2 Implement `generate_guiding_questions()` function with CBT-style prompts
   - [x] 2.3 Implement question flow logic (ask up to 2 questions, then process responses)
@@ -35,7 +35,7 @@
   - [x] 2.5 Create confirmation message system ("Great, saving this entry!")
   - [x] 2.6 Design question bank focused on priorities, emotions, and deeper insights
   - [x] 2.7 Implement conversation memory to avoid repeating questions within a session
-  - [ ] 2.8 Write unit tests for conversation flow and question generation
+  - [x] 2.8 Write unit tests for conversation flow and question generation
 
 - [ ] 3.0 Build content processing and summarization capabilities
   - [ ] 3.1 Implement `count_words()` function to check if entry exceeds 150 words
