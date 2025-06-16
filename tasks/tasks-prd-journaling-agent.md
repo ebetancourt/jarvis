@@ -58,7 +58,7 @@
   - [x] 4.9 Write unit tests for all search and retrieval functions
 
 - [ ] 5.0 Integrate journaling agent with existing agent framework
-  - [ ] 5.1 Create `src/agents/journaling_agent.py` following `jarvis.py` pattern
+  - [x] 5.1 Create `src/agents/journaling_agent.py` following `jarvis.py` pattern
   - [ ] 5.2 Import and configure journal tools as LangGraph tools
   - [ ] 5.3 Define agent prompt with journaling-specific instructions and personality
   - [ ] 5.4 Update `src/agents/agents.py` to include journaling agent in registry
