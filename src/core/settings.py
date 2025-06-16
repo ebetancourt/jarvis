@@ -106,6 +106,36 @@ class Settings(BaseSettings):
     MONGO_PASSWORD: SecretStr | None = None
     MONGO_AUTH_SOURCE: str | None = None
 
+    # Journaling Configuration
+    JOURNALING_WORD_COUNT_THRESHOLD: int = Field(
+        default=150,
+        ge=10,
+        le=1000,
+        description="Minimum word count to trigger automatic summarization",
+    )
+    JOURNALING_SUMMARY_RATIO: float = Field(
+        default=0.2,
+        gt=0.0,
+        le=1.0,
+        description="Maximum ratio of summary length to original (0.2 = 20%)",
+    )
+    JOURNALING_ENABLE_SUMMARIZATION: bool = Field(
+        default=True,
+        description="Enable or disable automatic summarization for long entries",
+    )
+    JOURNALING_SUMMARY_MIN_WORDS: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Minimum words required before summarization can be attempted",
+    )
+    JOURNALING_MAX_SUMMARY_ATTEMPTS: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum attempts for AI summarization before giving up",
+    )
+
     # Azure OpenAI Settings
     AZURE_OPENAI_API_KEY: SecretStr | None = None
     AZURE_OPENAI_ENDPOINT: str | None = None
@@ -117,7 +147,9 @@ class Settings(BaseSettings):
     def model_post_init(self, __context: Any) -> None:
         api_keys = {
             Provider.OPENAI: self.OPENAI_API_KEY,
-            Provider.OPENAI_COMPATIBLE: self.COMPATIBLE_BASE_URL and self.COMPATIBLE_MODEL,
+            Provider.OPENAI_COMPATIBLE: (
+                self.COMPATIBLE_BASE_URL and self.COMPATIBLE_MODEL
+            ),
             Provider.DEEPSEEK: self.DEEPSEEK_API_KEY,
             Provider.ANTHROPIC: self.ANTHROPIC_API_KEY,
             Provider.GOOGLE: self.GOOGLE_API_KEY,
@@ -193,13 +225,19 @@ class Settings(BaseSettings):
                                 self.AZURE_OPENAI_DEPLOYMENT_MAP
                             )
                         except Exception as e:
-                            raise ValueError(f"Invalid AZURE_OPENAI_DEPLOYMENT_MAP JSON: {e}")
+                            raise ValueError(
+                                f"Invalid AZURE_OPENAI_DEPLOYMENT_MAP JSON: {e}"
+                            )
 
                     # Validate required deployments exist
                     required_models = {"gpt-4o", "gpt-4o-mini"}
-                    missing_models = required_models - set(self.AZURE_OPENAI_DEPLOYMENT_MAP.keys())
+                    missing_models = required_models - set(
+                        self.AZURE_OPENAI_DEPLOYMENT_MAP.keys()
+                    )
                     if missing_models:
-                        raise ValueError(f"Missing required Azure deployments: {missing_models}")
+                        raise ValueError(
+                            f"Missing required Azure deployments: {missing_models}"
+                        )
                 case _:
                     raise ValueError(f"Unknown provider: {provider}")
 

@@ -1309,3 +1309,140 @@ Reflection 2: I learned that breaking down big tasks into smaller chunks really 
                 assert "Reflection 1:" in content
                 assert "Reflection 2:" in content
                 assert "## 19:30:00" in content
+
+
+class TestConfigurationIntegration:
+    """Test cases for configuration integration from core.settings."""
+
+    def test_exceeds_word_limit_uses_settings_default(self):
+        """Test that exceeds_word_limit uses settings.JOURNALING_WORD_COUNT_THRESHOLD by default."""
+        from core.settings import settings
+
+        # Test with text that's longer than default threshold (150 words)
+        long_text = " ".join(["word"] * 151)
+        short_text = " ".join(["word"] * 149)
+
+        # Should use settings default (150)
+        assert exceeds_word_limit(long_text) == True
+        assert exceeds_word_limit(short_text) == False
+
+        # Verify it's actually using the settings value
+        assert exceeds_word_limit(long_text) == (
+            count_words(long_text) > settings.JOURNALING_WORD_COUNT_THRESHOLD
+        )
+
+    def test_exceeds_word_limit_custom_override(self):
+        """Test that exceeds_word_limit accepts custom word limit override."""
+        text = " ".join(["word"] * 100)
+
+        # Test with custom limit
+        assert exceeds_word_limit(text, word_limit=50) == True
+        assert exceeds_word_limit(text, word_limit=150) == False
+
+    @patch("core.llm.get_model")
+    def test_generate_summary_uses_settings_defaults(self, mock_get_model):
+        """Test that generate_summary uses settings for ratio and min words."""
+        from core.settings import settings
+
+        # Mock the AI response
+        mock_model = Mock()
+        mock_response = Mock()
+        mock_response.content = "Test summary"
+        mock_model.invoke.return_value = mock_response
+        mock_get_model.return_value = mock_model
+
+        # Create text that meets minimum requirements
+        min_words = settings.JOURNALING_SUMMARY_MIN_WORDS
+        test_text = " ".join(["word"] * (min_words + 10))
+
+        result = generate_summary(test_text)
+
+        # Should not raise an error and return summary
+        assert result == "Test summary"
+
+        # Verify it uses the settings min_words threshold
+        short_text = " ".join(["word"] * (min_words - 1))
+        with pytest.raises(ValueError, match=f"at least {min_words} words"):
+            generate_summary(short_text)
+
+    @patch("core.llm.get_model")
+    def test_generate_summary_custom_ratio_override(self, mock_get_model):
+        """Test that generate_summary accepts custom ratio override."""
+        # Mock the AI response
+        mock_model = Mock()
+        mock_response = Mock()
+        mock_response.content = "Custom ratio summary"
+        mock_model.invoke.return_value = mock_response
+        mock_get_model.return_value = mock_model
+
+        test_text = " ".join(["word"] * 50)
+
+        # Test with custom ratio
+        result = generate_summary(test_text, max_summary_ratio=0.1)
+        assert result == "Custom ratio summary"
+
+    def test_save_journal_entry_respects_settings(self):
+        """Test that save_journal_entry_with_summary respects configuration settings."""
+        from core.settings import settings
+
+        # Create test content that's exactly at the threshold
+        threshold = settings.JOURNALING_WORD_COUNT_THRESHOLD
+        content_at_threshold = " ".join(["word"] * threshold)
+        content_over_threshold = " ".join(["word"] * (threshold + 1))
+        content_under_threshold = " ".join(["word"] * (threshold - 1))
+
+        # Test under threshold (should not attempt summarization)
+        with patch("tools.journal_tools.add_timestamp_entry") as mock_add:
+            mock_add.return_value = "/test/path.md"
+
+            result = save_journal_entry_with_summary(content_under_threshold)
+
+            assert "under" in result.lower()
+            assert str(threshold) in result
+            assert "📝" in result
+
+    def test_configuration_validation_in_settings(self):
+        """Test that the configuration values in settings have proper validation."""
+        from core.settings import Settings
+        from pydantic import ValidationError
+
+        # Test invalid word count threshold (too low)
+        with pytest.raises(ValidationError):
+            Settings(JOURNALING_WORD_COUNT_THRESHOLD=5, _env_file=None)
+
+        # Test invalid word count threshold (too high)
+        with pytest.raises(ValidationError):
+            Settings(JOURNALING_WORD_COUNT_THRESHOLD=2000, _env_file=None)
+
+        # Test invalid summary ratio (too low)
+        with pytest.raises(ValidationError):
+            Settings(JOURNALING_SUMMARY_RATIO=0.0, _env_file=None)
+
+        # Test invalid summary ratio (too high)
+        with pytest.raises(ValidationError):
+            Settings(JOURNALING_SUMMARY_RATIO=1.5, _env_file=None)
+
+    def test_settings_environment_variable_integration(self):
+        """Test that environment variables properly configure journaling settings."""
+        from core.settings import Settings
+        import os
+        from unittest.mock import patch
+
+        # Test environment variable override
+        with patch.dict(
+            os.environ,
+            {
+                "JOURNALING_WORD_COUNT_THRESHOLD": "200",
+                "JOURNALING_SUMMARY_RATIO": "0.3",
+                "JOURNALING_ENABLE_SUMMARIZATION": "false",
+                "JOURNALING_SUMMARY_MIN_WORDS": "30",
+                "JOURNALING_MAX_SUMMARY_ATTEMPTS": "5",
+            },
+        ):
+            test_settings = Settings(_env_file=None)
+
+            assert test_settings.JOURNALING_WORD_COUNT_THRESHOLD == 200
+            assert test_settings.JOURNALING_SUMMARY_RATIO == 0.3
+            assert test_settings.JOURNALING_ENABLE_SUMMARIZATION == False
+            assert test_settings.JOURNALING_SUMMARY_MIN_WORDS == 30
+            assert test_settings.JOURNALING_MAX_SUMMARY_ATTEMPTS == 5

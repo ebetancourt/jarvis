@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import date, datetime, time
 from typing import Optional
 from common.data import DATA_DIR
+from core.settings import settings
 
 
 def check_disk_space(path: str, required_bytes: int = 1024 * 1024) -> bool:
@@ -412,22 +413,23 @@ def count_words(text: str) -> int:
     return len(words)
 
 
-def exceeds_word_limit(text: str, word_limit: int = 150) -> bool:
+def exceeds_word_limit(text: str, word_limit: Optional[int] = None) -> bool:
     """
-    Checks if a text entry exceeds the specified word limit.
+    Check if the text exceeds the specified word limit.
 
-    This function is primarily used to determine if a journal entry should
-    be summarized based on its length.
+    Uses configurable word count threshold from settings if no limit is provided.
 
     Args:
-        text: The text string to check
-        word_limit: The maximum number of words allowed (default: 150)
+        text: The text to check
+        word_limit: Optional custom word limit. If None, uses settings.JOURNALING_WORD_COUNT_THRESHOLD
 
     Returns:
         bool: True if the text exceeds the word limit, False otherwise
     """
-    word_count = count_words(text)
-    return word_count > word_limit
+    if word_limit is None:
+        word_limit = settings.JOURNALING_WORD_COUNT_THRESHOLD
+
+    return count_words(text) > word_limit
 
 
 def validate_summary_length(
@@ -480,38 +482,37 @@ def format_summary_section(summary_text: str) -> str:
     return formatted_section
 
 
-def generate_summary(text: str, max_summary_ratio: float = 0.2) -> str:
+def generate_summary(text: str, max_summary_ratio: Optional[float] = None) -> str:
     """
-    Generates an AI-powered summary of a journal entry.
+    Generate a concise summary of the journal entry using AI.
 
-    Uses the default LLM model to create a concise summary that captures the
-    key themes, emotions, and insights from the original text. The summary
-    is designed to be significantly shorter than the original while preserving
-    the essential meaning and tone.
+    Uses configurable summary ratio and minimum word requirements from settings.
 
     Args:
         text: The journal entry text to summarize
-        max_summary_ratio: Maximum ratio of summary length to original text (default: 0.2)
+        max_summary_ratio: Optional custom summary ratio. If None, uses settings.JOURNALING_SUMMARY_RATIO
 
     Returns:
-        str: A concise summary of the journal entry
+        str: The generated summary text
 
     Raises:
         ValueError: If the text is empty or too short to meaningfully summarize
         OSError: If the AI model is unavailable or API calls fail
     """
-    from langchain_core.messages import HumanMessage
-    from core.llm import get_model
-    from core.settings import settings
+    if max_summary_ratio is None:
+        max_summary_ratio = settings.JOURNALING_SUMMARY_RATIO
+
+    min_words = settings.JOURNALING_SUMMARY_MIN_WORDS
 
     # Validate input
     if not text or not text.strip():
         raise ValueError("Cannot summarize empty text")
 
     word_count = count_words(text)
-    if word_count < 20:
+    if word_count < min_words:
         raise ValueError(
-            "Text is too short to meaningfully summarize (minimum 20 words)"
+            f"Text must have at least {min_words} words to generate meaningful summary. "
+            f"Current text has {word_count} words."
         )
 
     # Calculate target summary length
@@ -531,6 +532,9 @@ Journal Entry:
 Please provide a thoughtful summary that the writer would find valuable for future reflection."""
 
     try:
+        from langchain_core.messages import HumanMessage
+        from core.llm import get_model
+
         # Get the default model and create the message
         model = get_model(settings.DEFAULT_MODEL)
 
@@ -546,7 +550,7 @@ Please provide a thoughtful summary that the writer would find valuable for futu
         if not summary:
             raise OSError("AI model returned empty summary")
 
-            # Validate summary length meets the ratio requirement
+        # Validate summary length meets the ratio requirement
         if not validate_summary_length(text, summary, max_summary_ratio):
             summary_word_count = count_words(summary)
             max_allowed_words = int(word_count * max_summary_ratio)
@@ -597,63 +601,64 @@ def generate_formatted_summary(text: str, max_summary_ratio: float = 0.2) -> str
 
 
 def save_journal_entry_with_summary(
-    conversation_summary: str,
-    target_date: Optional[date] = None,
-    target_time: Optional[time] = None,
-    word_limit: int = 150,
-    summary_ratio: float = 0.2,
+    content: str,
+    custom_date: Optional[datetime] = None,
+    force_summary: bool = False,
+    max_summary_ratio: Optional[float] = None,
 ) -> str:
     """
-    Saves a journal entry with automatic summarization for long entries.
+    Save a journal entry with automatic summarization based on configuration.
 
-    This is the main integration function that combines the conversation flow
-    with file operations and intelligent summarization. It processes the complete
-    conversation, saves it to the daily journal file, and adds a summary if
-    the entry exceeds the word limit.
+    Uses settings to determine when summarization should be applied and with what parameters.
 
     Args:
-        conversation_summary: The complete conversation/journal entry text
-        target_date: The date for the journal entry (default: today)
-        target_time: The time for the timestamp (default: current time)
-        word_limit: Word count threshold for triggering summarization (default: 150)
-        summary_ratio: Maximum ratio of summary to original text (default: 0.2)
+        content: The journal entry content to save
+        custom_date: Optional datetime for the entry (defaults to current time)
+        force_summary: Force summarization even if below word threshold
+        max_summary_ratio: Optional custom summary ratio. If None, uses settings.JOURNALING_SUMMARY_RATIO
 
     Returns:
-        str: Success message with file path and summary information
+        str: Status message indicating what was saved and any summarization performed
 
     Raises:
-        ValueError: If conversation_summary is empty
-        OSError: If file operations fail or AI summarization fails
+        OSError: If file operations fail or directory cannot be created
+        ValueError: If content is empty
     """
-    from datetime import datetime
-
-    if not conversation_summary or not conversation_summary.strip():
+    if not content or not content.strip():
         raise ValueError("Cannot save empty journal entry")
 
-    # Use current date/time if not specified
-    if target_date is None:
-        target_date = date.today()
-    if target_time is None:
-        target_time = datetime.now().time()
+    if custom_date is None:
+        custom_date = datetime.now()
+
+    # Check if summarization is enabled and if content meets criteria
+    should_summarize = settings.JOURNALING_ENABLE_SUMMARIZATION and (
+        force_summary or exceeds_word_limit(content)
+    )
+
+    # Apply configuration settings
+    if max_summary_ratio is None:
+        max_summary_ratio = settings.JOURNALING_SUMMARY_RATIO
 
     # Prepare the entry content
-    entry_content = conversation_summary.strip()
+    entry_content = content.strip()
 
     # Check if summarization is needed
-    needs_summary = exceeds_word_limit(entry_content, word_limit)
+    needs_summary = should_summarize
     word_count = count_words(entry_content)
 
     if needs_summary:
         try:
             # Generate and format the summary
-            formatted_summary = generate_formatted_summary(entry_content, summary_ratio)
+            formatted_summary = generate_formatted_summary(
+                entry_content, max_summary_ratio
+            )
 
             # Append summary to the entry
             entry_content_with_summary = f"{entry_content}\n\n{formatted_summary}"
 
             # Save the entry with summary
             file_path = add_timestamp_entry(
-                entry_content_with_summary, target_date, target_time
+                entry_content_with_summary, custom_date.date(), custom_date.time()
             )
 
             return (
@@ -669,7 +674,9 @@ def save_journal_entry_with_summary(
                 f"Failed to generate summary: {e}. Saving entry without summary."
             )
 
-            file_path = add_timestamp_entry(entry_content, target_date, target_time)
+            file_path = add_timestamp_entry(
+                entry_content, custom_date.date(), custom_date.time()
+            )
 
             return (
                 f"Journal entry saved to {file_path}. "
@@ -678,9 +685,11 @@ def save_journal_entry_with_summary(
             )
     else:
         # Save entry without summary
-        file_path = add_timestamp_entry(entry_content, target_date, target_time)
+        file_path = add_timestamp_entry(
+            entry_content, custom_date.date(), custom_date.time()
+        )
 
         return (
             f"Journal entry saved to {file_path}. "
-            f"Entry was {word_count} words (under {word_limit} word limit). 📝"
+            f"Entry was {word_count} words (under {settings.JOURNALING_WORD_COUNT_THRESHOLD} word limit). 📝"
         )
