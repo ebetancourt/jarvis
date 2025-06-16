@@ -278,23 +278,82 @@ def _handle_completion_phase(
     conversation_state: JournalingConversationState,
 ) -> tuple[str, bool]:
     """Handle the completion phase and prepare for journal saving."""
-    # Create completion message
+    completion_message = generate_confirmation_message(conversation_state)
+    return completion_message, True
+
+
+def generate_confirmation_message(
+    conversation_state: JournalingConversationState,
+) -> str:
+    """
+    Generate encouraging confirmation messages for journal entry saving.
+
+    Creates varied, supportive messages that acknowledge the user's reflection
+    effort and confirm the journal entry will be saved.
+
+    Args:
+        conversation_state: Current conversation state with user responses
+
+    Returns:
+        str: An encouraging confirmation message
+    """
     responses_count = len(
         [r for r in conversation_state.responses_received if r.strip()]
     )
 
-    if responses_count > 0:
-        completion_message = (
-            "Thank you for taking the time to reflect today. I'll save this "
-            "entry to your daily journal. Your thoughts and insights are valuable!"
-        )
-    else:
-        completion_message = (
-            "Thank you for sharing your initial thoughts. I'll save this to "
-            "your daily journal. Even brief reflections can be meaningful!"
-        )
+    # Different message sets based on engagement level
+    if responses_count >= 2:
+        # Deep engagement - multiple meaningful responses
+        deep_engagement_messages = [
+            "Great work diving deep into your reflections today! I'll save this "
+            "thoughtful entry to your daily journal. 📝",
+            "Thank you for taking the time to explore your thoughts and feelings. "
+            "Your insights are now saved in your journal! ✨",
+            "Wonderful reflection! I can see you've really thought through your day. "
+            "Your entry is being saved to your journal. 🌟",
+            "Excellent self-reflection today! These insights will be valuable to "
+            "look back on. Saving to your journal now! 💭",
+            "Beautiful work reflecting on your experiences. Your thoughtful entry "
+            "is now safely stored in your daily journal! 🌱",
+        ]
+        selected_messages = deep_engagement_messages
 
-    return completion_message, True
+    elif responses_count == 1:
+        # Moderate engagement - one follow-up response
+        moderate_engagement_messages = [
+            "Thank you for sharing your thoughts with me today. I'll save this "
+            "reflection to your daily journal! 📖",
+            "Great job taking a moment to reflect. Your entry is being saved "
+            "to your journal now! ✍️",
+            "Nice work thinking through your day. I'll add this to your daily "
+            "journal for you! 🗓️",
+            "Thanks for the thoughtful reflection! Your journal entry is being "
+            "saved now. 💫",
+            "Good reflection today! I'll make sure this gets saved to your "
+            "daily journal. 📚",
+        ]
+        selected_messages = moderate_engagement_messages
+
+    else:
+        # Initial response only
+        initial_only_messages = [
+            "Thank you for sharing your initial thoughts. I'll save this to "
+            "your daily journal. Even brief reflections can be meaningful! 📝",
+            "Great start! I'll add your thoughts to today's journal entry. "
+            "Every reflection counts! ✨",
+            "Thanks for taking a moment to reflect. Your entry is being saved "
+            "to your journal! 🌟",
+            "Perfect! I'll save your reflection to today's journal. Sometimes "
+            "simple thoughts are the most powerful! 💭",
+            "Wonderful! Your thoughts are being added to your daily journal. "
+            "Thank you for reflecting today! 🌱",
+        ]
+        selected_messages = initial_only_messages
+
+    # Select a random message from the appropriate set
+    confirmation_message = random.choice(selected_messages)
+
+    return confirmation_message
 
 
 # Initialize conversation state
