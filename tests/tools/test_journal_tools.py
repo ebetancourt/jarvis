@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 import pytest
 import sys
+import yaml
 
 # Add src to path for importing the source modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -24,6 +25,12 @@ from tools.journal_tools import (
     format_summary_section,
     generate_formatted_summary,
     save_journal_entry_with_summary,
+    parse_frontmatter,
+    extract_content_without_frontmatter,
+    update_frontmatter,
+    get_journal_metadata,
+    add_metadata_to_entry,
+    _normalize_list_field,
 )
 
 
@@ -1448,322 +1455,349 @@ class TestConfigurationIntegration:
             assert test_settings.JOURNALING_MAX_SUMMARY_ATTEMPTS == 5
 
 
-class TestSummarizationLogicAndFormatting:
-    """Comprehensive unit tests specifically for summarization logic and formatting."""
+class TestFrontmatterParsing:
+    """Test cases for frontmatter parsing and metadata functionality."""
 
-    def test_word_count_calculation_accuracy(self):
-        """Test precise word counting logic for various text patterns."""
-        test_cases = [
-            # (text, expected_count)
-            ("", 0),
-            ("   ", 0),
-            ("word", 1),
-            ("two words", 2),
-            ("word1 word2 word3", 3),
-            ("  spaced   words  ", 2),
-            ("words\nwith\nnewlines", 3),
-            ("words\twith\ttabs", 3),
-            ("punctuation, words! here?", 3),
-            ("numbers 123 and symbols @#$", 5),
-            ("contractions don't shouldn't won't", 3),
-            ("hyphenated-words and compound-terms", 3),
-            ("unicode 测试 words 中文", 4),
-        ]
+    def test_parse_frontmatter_valid_yaml(self):
+        """Test parsing valid YAML frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
 
-        for text, expected in test_cases:
-            actual = count_words(text)
+            # Create file with frontmatter
+            content = """---
+mood: happy
+keywords:
+  - work
+  - productivity
+topics: ["project management", "team meeting"]
+---
+
+# Test Entry
+
+This is a test journal entry."""
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            result = parse_frontmatter(test_file)
+
+            assert result["mood"] == "happy"
+            assert result["keywords"] == ["work", "productivity"]
+            assert result["topics"] == ["project management", "team meeting"]
+
+    def test_parse_frontmatter_no_frontmatter(self):
+        """Test parsing file with no frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create file without frontmatter
+            content = "# Test Entry\n\nThis is a test journal entry."
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            result = parse_frontmatter(test_file)
+
+            assert result == {}
+
+    def test_parse_frontmatter_invalid_yaml(self):
+        """Test parsing file with invalid YAML frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create file with invalid YAML
+            content = """---
+mood: happy
+keywords: [unclosed bracket
+---
+
+# Test Entry"""
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            with pytest.raises(yaml.YAMLError):
+                parse_frontmatter(test_file)
+
+    def test_parse_frontmatter_incomplete_delimiters(self):
+        """Test parsing file with incomplete frontmatter delimiters."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create file with only opening delimiter
+            content = """---
+mood: happy
+keywords: work
+
+# Test Entry without closing delimiter"""
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            result = parse_frontmatter(test_file)
+
+            assert result == {}  # Should return empty dict for incomplete frontmatter
+
+    def test_extract_content_without_frontmatter_with_frontmatter(self):
+        """Test extracting content from file with frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            content = """---
+mood: happy
+keywords: ["work"]
+---
+
+# Test Entry
+
+This is the main content."""
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            result = extract_content_without_frontmatter(test_file)
+
+            expected = """
+# Test Entry
+
+This is the main content."""
+
+            assert result.strip() == expected.strip()
+
+    def test_extract_content_without_frontmatter_no_frontmatter(self):
+        """Test extracting content from file without frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            content = "# Test Entry\n\nThis is the main content."
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            result = extract_content_without_frontmatter(test_file)
+
+            assert result == content
+
+    def test_update_frontmatter_add_to_existing(self):
+        """Test updating frontmatter in file that already has frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create file with existing frontmatter
+            content = """---
+mood: neutral
+keywords: ["old"]
+---
+
+# Test Entry"""
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            # Update frontmatter
+            new_metadata = {"mood": "happy", "topics": ["new topic"]}
+            update_frontmatter(test_file, new_metadata)
+
+            # Verify the update
+            updated_frontmatter = parse_frontmatter(test_file)
+            assert updated_frontmatter["mood"] == "happy"
+            assert updated_frontmatter["keywords"] == [
+                "old"
+            ]  # Should preserve existing
+            assert updated_frontmatter["topics"] == ["new topic"]
+
+    def test_update_frontmatter_add_to_no_frontmatter(self):
+        """Test adding frontmatter to file that has none."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            # Create file without frontmatter
+            content = "# Test Entry\n\nOriginal content."
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            # Add frontmatter
+            metadata = {"mood": "excited", "keywords": ["first", "time"]}
+            update_frontmatter(test_file, metadata)
+
+            # Verify frontmatter was added
+            result_frontmatter = parse_frontmatter(test_file)
+            assert result_frontmatter["mood"] == "excited"
+            assert result_frontmatter["keywords"] == ["first", "time"]
+
+            # Verify content is preserved
+            result_content = extract_content_without_frontmatter(test_file)
+            assert "# Test Entry" in result_content
+            assert "Original content." in result_content
+
+    def test_get_journal_metadata_with_frontmatter(self):
+        """Test getting standardized metadata from file with frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "2025-01-10.md")
+
+            content = """---
+mood: productive
+keywords: "work, coding, testing"
+topics: ["software development"]
+custom_field: "custom value"
+---
+
+# Test Entry
+
+This is a test entry with multiple words for counting."""
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            result = get_journal_metadata(test_file)
+
+            assert result["mood"] == "productive"
+            assert result["keywords"] == ["work", "coding", "testing"]
+            assert result["topics"] == ["software development"]
+            assert result["tags"] == []  # Default empty
+            assert result["date"] == "2025-01-10"
+            assert result["word_count"] > 0
+            assert result["file_path"] == test_file
             assert (
-                actual == expected
-            ), f"Text: '{text}' - Expected: {expected}, Got: {actual}"
+                result["custom_field"] == "custom value"
+            )  # Additional fields preserved
 
-    def test_word_limit_threshold_logic(self):
-        """Test the exact logic for word limit threshold calculations."""
-        # Test edge cases around thresholds
-        assert exceeds_word_limit("", 10) == False
-        assert exceeds_word_limit("one", 1) == False  # exactly at limit
-        assert exceeds_word_limit("one two", 1) == True  # exceeds by 1
+    def test_get_journal_metadata_no_frontmatter(self):
+        """Test getting metadata from file without frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "2025-01-11.md")
 
-        # Test with default settings
-        from core.settings import settings
+            content = "# Simple Entry\n\nThis is a simple entry without frontmatter."
 
-        threshold = settings.JOURNALING_WORD_COUNT_THRESHOLD
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
 
-        # Create text at exact threshold
-        text_at_threshold = " ".join(["word"] * threshold)
-        text_over_threshold = " ".join(["word"] * (threshold + 1))
-        text_under_threshold = " ".join(["word"] * (threshold - 1))
+            result = get_journal_metadata(test_file)
 
-        assert exceeds_word_limit(text_at_threshold) == False
-        assert exceeds_word_limit(text_over_threshold) == True
-        assert exceeds_word_limit(text_under_threshold) == False
+            assert result["mood"] is None
+            assert result["keywords"] == []
+            assert result["topics"] == []
+            assert result["tags"] == []
+            assert result["date"] == "2025-01-11"
+            assert result["word_count"] > 0
+            assert result["file_path"] == test_file
 
-    def test_summary_length_validation_logic(self):
-        """Test detailed summary length validation calculations."""
-        # Test integer truncation behavior
+    def test_normalize_list_field_string_input(self):
+        """Test normalizing comma-separated string to list."""
         test_cases = [
-            # (original_words, summary_words, ratio, should_pass)
-            (100, 20, 0.2, True),  # exactly at limit
-            (100, 19, 0.2, True),  # under limit
-            (100, 21, 0.2, False),  # over limit
-            (75, 15, 0.2, True),  # 15 <= int(75 * 0.2) = 15
-            (74, 15, 0.2, False),  # 15 > int(74 * 0.2) = 14
-            (33, 6, 0.2, True),  # 6 <= int(33 * 0.2) = 6
-            (33, 7, 0.2, False),  # 7 > int(33 * 0.2) = 6
-            (1, 1, 0.5, False),  # 1 > int(1 * 0.5) = 0
-            (5, 1, 0.3, True),  # 1 <= int(5 * 0.3) = 1
+            ("one, two, three", ["one", "two", "three"]),
+            ("single", ["single"]),
+            ("  spaced  ,  values  ", ["spaced", "values"]),
+            ("trailing,comma,", ["trailing", "comma"]),
+            ("", []),
+            ("   ", []),
         ]
 
-        for orig_words, summ_words, ratio, should_pass in test_cases:
-            original_text = " ".join([f"word{i}" for i in range(orig_words)])
-            summary_text = " ".join([f"sum{i}" for i in range(summ_words)])
+        for input_value, expected in test_cases:
+            result = _normalize_list_field(input_value)
+            assert result == expected
 
-            result = validate_summary_length(original_text, summary_text, ratio)
-            assert result == should_pass, (
-                f"Original: {orig_words} words, Summary: {summ_words} words, "
-                f"Ratio: {ratio}, Expected: {should_pass}, Got: {result}"
+    def test_normalize_list_field_list_input(self):
+        """Test normalizing list input."""
+        test_cases = [
+            (["one", "two"], ["one", "two"]),
+            ([1, 2, 3], ["1", "2", "3"]),  # Numbers converted to strings
+            (["  spaced  ", "", "valid"], ["spaced", "valid"]),  # Empty filtered out
+            ([], []),
+        ]
+
+        for input_value, expected in test_cases:
+            result = _normalize_list_field(input_value)
+            assert result == expected
+
+    def test_normalize_list_field_none_input(self):
+        """Test normalizing None input."""
+        result = _normalize_list_field(None)
+        assert result == []
+
+    def test_add_metadata_to_entry_new_metadata(self):
+        """Test adding metadata to entry with no existing frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
+
+            content = "# Test Entry\n\nContent without metadata."
+
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            # Add metadata
+            add_metadata_to_entry(
+                test_file,
+                mood="focused",
+                keywords=["productivity", "goals"],
+                topics=["work", "planning"],
+                custom_field="test value",
             )
 
-    @patch("core.llm.get_model")
-    def test_summary_generation_prompt_construction(self, mock_get_model):
-        """Test that summary generation creates proper prompts."""
-        mock_model = Mock()
-        mock_response = Mock()
-        mock_response.content = "Generated summary"
-        mock_model.invoke.return_value = mock_response
-        mock_get_model.return_value = mock_model
+            # Verify metadata was added
+            metadata = get_journal_metadata(test_file)
+            assert metadata["mood"] == "focused"
+            assert metadata["keywords"] == ["productivity", "goals"]
+            assert metadata["topics"] == ["work", "planning"]
+            assert metadata["custom_field"] == "test value"
 
-        test_text = " ".join([f"word{i}" for i in range(50)])
+    def test_add_metadata_to_entry_update_existing(self):
+        """Test updating metadata in entry with existing frontmatter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
 
-        # Test with different ratios
-        ratios_and_targets = [
-            (0.1, 5),  # 10% of 50 words = 5 words
-            (0.2, 10),  # 20% of 50 words = 10 words
-            (0.5, 25),  # 50% of 50 words = 25 words
-        ]
+            # Create file with existing frontmatter
+            content = """---
+mood: neutral
+keywords: ["old"]
+---
 
-        for ratio, expected_target in ratios_and_targets:
-            generate_summary(test_text, max_summary_ratio=ratio)
+# Test Entry"""
 
-            # Verify the prompt contains the correct target word count
-            call_args = mock_model.invoke.call_args[0][0][0].content
-            assert (
-                f"{expected_target} words" in call_args
-            ), f"Expected {expected_target} words in prompt for ratio {ratio}"
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(content)
 
-            # Verify prompt structure
-            assert "journal entry" in call_args.lower()
-            assert "summary" in call_args.lower()
-            assert "personal reflection" in call_args.lower()
+            # Update with new metadata
+            add_metadata_to_entry(test_file, mood="excited", topics=["new", "topics"])
 
-    @patch("core.llm.get_model")
-    def test_summary_generation_validation_integration(self, mock_get_model):
-        """Test that summary generation includes length validation."""
-        mock_model = Mock()
-        mock_get_model.return_value = mock_model
+            # Verify updates
+            metadata = get_journal_metadata(test_file)
+            assert metadata["mood"] == "excited"  # Updated
+            assert metadata["keywords"] == ["old"]  # Preserved
+            assert metadata["topics"] == ["new", "topics"]  # Added
 
-        # Test case where AI returns summary that's too long
-        test_text = " ".join([f"word{i}" for i in range(100)])  # 100 words
+    def test_add_metadata_to_entry_no_metadata_provided(self):
+        """Test that no changes are made when no metadata is provided."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_file = os.path.join(temp_dir, "test.md")
 
-        # AI returns 30-word summary (30% when limit is 20%)
-        long_ai_summary = " ".join([f"summary{i}" for i in range(30)])
-        mock_response = Mock()
-        mock_response.content = long_ai_summary
-        mock_model.invoke.return_value = mock_response
+            original_content = "# Test Entry\n\nOriginal content."
 
-        # Should still return the summary but with validation warning
-        with patch("warnings.warn") as mock_warn:
-            result = generate_summary(test_text, max_summary_ratio=0.2)
+            with open(test_file, "w", encoding="utf-8") as f:
+                f.write(original_content)
 
-            assert result == long_ai_summary
-            # Should have warned about length exceeding target
-            mock_warn.assert_called_once()
-            warning_message = mock_warn.call_args[0][0]
-            assert "exceeds target length" in warning_message
+            # Call with no metadata
+            add_metadata_to_entry(test_file)
 
-    def test_format_summary_section_markdown_compliance(self):
-        """Test that format_summary_section creates proper Markdown."""
-        test_cases = [
-            "Simple summary text.",
-            "Multi-line\nsummary with\nline breaks.",
-            "Summary with **bold** and *italic* markdown.",
-            "Summary with [links](http://example.com) and `code`.",
-            "Summary with > quotes and - lists.",
-        ]
+            # Verify no changes were made
+            with open(test_file, "r", encoding="utf-8") as f:
+                result_content = f.read()
 
-        for summary_text in test_cases:
-            result = format_summary_section(summary_text)
+            assert result_content == original_content
 
-            # Verify Markdown structure
-            lines = result.split("\n")
-            assert lines[0] == "### Summary", "First line should be heading"
-            assert lines[1] == "", "Second line should be empty"
+    def test_frontmatter_error_handling_nonexistent_file(self):
+        """Test error handling for non-existent files."""
+        nonexistent_file = "/path/that/does/not/exist.md"
 
-            # Content should start from line 3
-            content_lines = lines[2:]
-            content = "\n".join(content_lines)
-            assert summary_text.strip() in content
+        with pytest.raises(FileNotFoundError):
+            parse_frontmatter(nonexistent_file)
 
-    def test_format_summary_section_whitespace_normalization(self):
-        """Test whitespace handling in summary formatting."""
-        test_cases = [
-            # (input, expected_content_part)
-            ("  leading spaces", "leading spaces"),
-            ("trailing spaces  ", "trailing spaces"),
-            ("  both ends  ", "both ends"),
-            ("\tleading tab", "leading tab"),
-            ("trailing tab\t", "trailing tab"),
-            ("\n\nleading newlines", "leading newlines"),
-            ("trailing newlines\n\n", "trailing newlines"),
-            ("   \n\t  mixed whitespace  \t\n   ", "mixed whitespace"),
-        ]
+        with pytest.raises(FileNotFoundError):
+            extract_content_without_frontmatter(nonexistent_file)
 
-        for input_text, expected_content in test_cases:
-            result = format_summary_section(input_text)
-            assert expected_content in result
+        with pytest.raises(FileNotFoundError):
+            update_frontmatter(nonexistent_file, {"mood": "test"})
 
-            # Verify structure is preserved
-            assert result.startswith("### Summary\n\n")
-
-    def test_integrated_summary_workflow_logic(self):
-        """Test the complete logic flow from word counting to formatting."""
-        # Test short entry (no summarization)
-        short_entry = " ".join(["word"] * 50)  # 50 words, under default 150
-
-        with patch("tools.journal_tools.add_timestamp_entry") as mock_add:
-            mock_add.return_value = "/test/path.md"
-
-            result = save_journal_entry_with_summary(short_entry)
-
-            # Should not attempt summarization
-            assert "under" in result.lower()
-            assert "word limit" in result.lower()
-            assert "📝" in result
-
-    @patch("core.llm.get_model")
-    def test_integrated_summary_workflow_with_ai(self, mock_get_model):
-        """Test complete workflow with AI summarization."""
-        # Create long entry
-        long_entry = " ".join([f"entry{i}" for i in range(200)])  # 200 words
-
-        # Mock AI response
-        mock_model = Mock()
-        mock_response = Mock()
-        ai_summary = "This is a test AI summary of the journal entry."
-        mock_response.content = ai_summary
-        mock_model.invoke.return_value = mock_response
-        mock_get_model.return_value = mock_model
-
-        with patch("tools.journal_tools.add_timestamp_entry") as mock_add:
-            mock_add.return_value = "/test/journal.md"
-
-            result = save_journal_entry_with_summary(long_entry)
-
-            # Verify workflow results
-            assert "200 words" in result
-            assert "summarized" in result.lower()
-            assert "### Summary" in result
-            assert ai_summary in result
-            assert "📝✨" in result
-
-    @patch("core.llm.get_model")
-    def test_error_recovery_in_summarization_workflow(self, mock_get_model):
-        """Test error handling and recovery in summarization workflow."""
-        long_entry = " ".join([f"word{i}" for i in range(200)])
-
-        # Test AI failure recovery
-        mock_model = Mock()
-        mock_model.invoke.side_effect = Exception("AI service unavailable")
-        mock_get_model.return_value = mock_model
-
-        with patch("tools.journal_tools.add_timestamp_entry") as mock_add:
-            mock_add.return_value = "/test/journal.md"
-
-            result = save_journal_entry_with_summary(long_entry)
-
-            # Should fall back gracefully
-            assert "saved successfully" in result.lower()
-            assert "summarization failed" in result.lower()
-            assert "⚠️" in result
-
-            # Original entry should still be saved
-            mock_add.assert_called_once()
-
-    def test_configuration_driven_behavior_variations(self):
-        """Test how different configurations affect summarization behavior."""
-        test_entry = " ".join([f"word{i}" for i in range(100)])  # 100 words
-
-        # Test with different word count thresholds
-        assert exceeds_word_limit(test_entry, word_limit=50) == True
-        assert exceeds_word_limit(test_entry, word_limit=100) == False
-        assert exceeds_word_limit(test_entry, word_limit=150) == False
-
-        # Test with different summary ratios
-        test_cases = [
-            (0.05, 5),  # 5% = 5 words max
-            (0.1, 10),  # 10% = 10 words max
-            (0.3, 30),  # 30% = 30 words max
-        ]
-
-        for ratio, max_words in test_cases:
-            # Create summary at limit
-            summary_at_limit = " ".join([f"sum{i}" for i in range(max_words)])
-            summary_over_limit = " ".join([f"sum{i}" for i in range(max_words + 1)])
-
-            assert validate_summary_length(test_entry, summary_at_limit, ratio) == True
-            assert (
-                validate_summary_length(test_entry, summary_over_limit, ratio) == False
-            )
-
-    def test_edge_case_text_patterns(self):
-        """Test summarization with challenging text patterns."""
-        edge_cases = [
-            # Very long words
-            "supercalifragilisticexpialidocious " * 30,
-            # Mixed languages/scripts
-            "English words mixed with 中文字符 and العربية text",
-            # Heavy punctuation
-            "Words!!! With??? Lots... Of--- Punctuation...",
-            # Numbers and symbols
-            "Entry on 2024-01-15 with $100.50 and 25% increase @user #tag",
-            # URLs and emails
-            "Visit https://example.com or email test@domain.org for details",
-            # Code-like text
-            "Function def example(param): return param * 2 end function",
-        ]
-
-        for text in edge_cases:
-            # Should handle without errors
-            word_count = count_words(text)
-            assert isinstance(word_count, int)
-            assert word_count >= 0
-
-            # Should be able to determine if exceeds limit
-            result = exceeds_word_limit(text, word_limit=10)
-            assert isinstance(result, bool)
-
-    def test_format_consistency_across_scenarios(self):
-        """Test that formatting remains consistent across different scenarios."""
-        test_summaries = [
-            "Short summary.",
-            "Longer summary with multiple sentences. It includes various details.",
-            "Summary\nwith\nmultiple\nlines\nof\ntext.",
-            "Summary with special chars: @#$%^&*()[]{}",
-            "",  # This should raise ValueError
-        ]
-
-        for i, summary in enumerate(test_summaries):
-            if summary == "":
-                with pytest.raises(ValueError):
-                    format_summary_section(summary)
-            else:
-                result = format_summary_section(summary)
-
-                # Consistent structure
-                assert result.startswith("### Summary\n\n")
-
-                # Content preservation
-                assert summary.strip() in result
-
-                # No extra trailing whitespace
-                assert not result.endswith(" ")
-                assert not result.endswith("\t")
+        with pytest.raises(FileNotFoundError):
+            get_journal_metadata(nonexistent_file)

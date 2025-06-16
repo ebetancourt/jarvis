@@ -4,9 +4,10 @@ import errno
 import shutil
 from pathlib import Path
 from datetime import date, datetime, time
-from typing import Optional
+from typing import Optional, Dict, Any, List, Union
 from common.data import DATA_DIR
 from core.settings import settings
+import yaml
 
 
 def check_disk_space(path: str, required_bytes: int = 1024 * 1024) -> bool:
@@ -693,3 +694,253 @@ def save_journal_entry_with_summary(
             f"Journal entry saved to {file_path}. "
             f"Entry was {word_count} words (under {settings.JOURNALING_WORD_COUNT_THRESHOLD} word limit). 📝"
         )
+
+
+def parse_frontmatter(file_path: str) -> Dict[str, Any]:
+    """
+    Parse YAML frontmatter from a journal file.
+
+    Frontmatter is expected to be at the beginning of the file, delimited by '---'
+    lines. Returns the parsed frontmatter as a dictionary.
+
+    Args:
+        file_path: Absolute path to the journal file
+
+    Returns:
+        Dict[str, Any]: Parsed frontmatter data, empty dict if no frontmatter found
+
+    Raises:
+        FileNotFoundError: If the specified file doesn't exist
+        OSError: If file operations fail
+        yaml.YAMLError: If frontmatter contains invalid YAML
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Journal file does not exist: {file_path}")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Check if file starts with frontmatter delimiter
+        if not content.startswith("---\n"):
+            return {}
+
+        # Find the closing delimiter
+        try:
+            end_delimiter_pos = content.index("\n---\n", 4)
+        except ValueError:
+            # No closing delimiter found, invalid frontmatter
+            return {}
+
+        # Extract frontmatter content (between delimiters)
+        frontmatter_content = content[4:end_delimiter_pos]
+
+        # Parse YAML
+        try:
+            frontmatter_data = yaml.safe_load(frontmatter_content)
+            return frontmatter_data if frontmatter_data else {}
+        except yaml.YAMLError as e:
+            raise yaml.YAMLError(f"Invalid YAML in frontmatter: {e}")
+
+    except OSError as e:
+        raise OSError(f"Failed to read file {file_path}: {e}")
+
+
+def extract_content_without_frontmatter(file_path: str) -> str:
+    """
+    Extract the main content from a journal file, excluding frontmatter.
+
+    Args:
+        file_path: Absolute path to the journal file
+
+    Returns:
+        str: The main content without frontmatter
+
+    Raises:
+        FileNotFoundError: If the specified file doesn't exist
+        OSError: If file operations fail
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Journal file does not exist: {file_path}")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Check if file starts with frontmatter
+        if not content.startswith("---\n"):
+            return content
+
+        # Find the closing delimiter
+        try:
+            end_delimiter_pos = content.index("\n---\n", 4)
+            # Return content after the closing delimiter and newline
+            return content[end_delimiter_pos + 5 :]
+        except ValueError:
+            # No closing delimiter found, return original content
+            return content
+
+    except OSError as e:
+        raise OSError(f"Failed to read file {file_path}: {e}")
+
+
+def update_frontmatter(file_path: str, metadata: Dict[str, Any]) -> None:
+    """
+    Update or add frontmatter to a journal file.
+
+    Args:
+        file_path: Absolute path to the journal file
+        metadata: Dictionary of metadata to add/update in frontmatter
+
+    Raises:
+        FileNotFoundError: If the specified file doesn't exist
+        OSError: If file operations fail
+        yaml.YAMLError: If metadata cannot be serialized to YAML
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Journal file does not exist: {file_path}")
+
+    try:
+        # Get existing frontmatter and content
+        existing_frontmatter = parse_frontmatter(file_path)
+        main_content = extract_content_without_frontmatter(file_path)
+
+        # Merge existing frontmatter with new metadata
+        updated_frontmatter = {**existing_frontmatter, **metadata}
+
+        # Generate YAML frontmatter
+        try:
+            yaml_content = yaml.dump(
+                updated_frontmatter, default_flow_style=False, sort_keys=True
+            )
+        except yaml.YAMLError as e:
+            raise yaml.YAMLError(f"Failed to serialize metadata to YAML: {e}")
+
+        # Build the complete file content
+        new_content = f"---\n{yaml_content}---\n{main_content}"
+
+        # Write back to file
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+    except OSError as e:
+        raise OSError(f"Failed to update frontmatter in file {file_path}: {e}")
+
+
+def get_journal_metadata(file_path: str) -> Dict[str, Any]:
+    """
+    Get metadata from a journal file's frontmatter.
+
+    Returns standardized metadata fields including mood, keywords, topics.
+
+    Args:
+        file_path: Absolute path to the journal file
+
+    Returns:
+        Dict[str, Any]: Dictionary containing metadata with standardized keys
+
+    Raises:
+        FileNotFoundError: If the specified file doesn't exist
+        OSError: If file operations fail
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Journal file does not exist: {file_path}")
+
+    try:
+        frontmatter = parse_frontmatter(file_path)
+        content = extract_content_without_frontmatter(file_path)
+
+        # Extract filename date (YYYY-MM-DD.md format)
+        filename = os.path.basename(file_path)
+        file_date = filename.replace(".md", "") if filename.endswith(".md") else None
+
+        # Build standardized metadata
+        metadata = {
+            "mood": frontmatter.get("mood"),
+            "keywords": _normalize_list_field(frontmatter.get("keywords", [])),
+            "topics": _normalize_list_field(frontmatter.get("topics", [])),
+            "tags": _normalize_list_field(frontmatter.get("tags", [])),
+            "date": file_date,
+            "word_count": count_words(content),
+            "file_path": file_path,
+        }
+
+        # Add any additional frontmatter fields
+        for key, value in frontmatter.items():
+            if key not in metadata:
+                metadata[key] = value
+
+        return metadata
+
+    except OSError as e:
+        raise OSError(f"Failed to get metadata from file {file_path}: {e}")
+
+
+def _normalize_list_field(field_value: Union[str, List[str], None]) -> List[str]:
+    """
+    Normalize a field that should be a list of strings.
+
+    Args:
+        field_value: The field value to normalize
+
+    Returns:
+        List[str]: Normalized list of strings
+    """
+    if not field_value:
+        return []
+
+    if isinstance(field_value, str):
+        # Split on commas and clean up whitespace
+        return [item.strip() for item in field_value.split(",") if item.strip()]
+
+    if isinstance(field_value, list):
+        # Ensure all items are strings and filter out empty ones
+        return [str(item).strip() for item in field_value if str(item).strip()]
+
+    return []
+
+
+def add_metadata_to_entry(
+    file_path: str,
+    mood: Optional[str] = None,
+    keywords: Optional[List[str]] = None,
+    topics: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    **additional_metadata: Any,
+) -> None:
+    """
+    Add metadata to a journal file's frontmatter.
+
+    Args:
+        file_path: Absolute path to the journal file
+        mood: Mood for the entry (e.g., "happy", "stressed", "calm")
+        keywords: List of keywords related to the entry
+        topics: List of topics covered in the entry
+        tags: List of tags for categorization
+        **additional_metadata: Any additional metadata fields
+
+    Raises:
+        FileNotFoundError: If the specified file doesn't exist
+        OSError: If file operations fail
+        yaml.YAMLError: If metadata cannot be serialized
+    """
+    metadata = {}
+
+    if mood is not None:
+        metadata["mood"] = mood
+
+    if keywords is not None:
+        metadata["keywords"] = keywords
+
+    if topics is not None:
+        metadata["topics"] = topics
+
+    if tags is not None:
+        metadata["tags"] = tags
+
+    # Add any additional metadata
+    metadata.update(additional_metadata)
+
+    # Only update if we have metadata to add
+    if metadata:
+        update_frontmatter(file_path, metadata)
