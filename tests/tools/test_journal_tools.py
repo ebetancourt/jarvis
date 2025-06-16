@@ -37,6 +37,8 @@ from tools.journal_tools import (
     search_by_keywords,
     _extract_searchable_frontmatter_text,
     _calculate_match_score,
+    search_by_mood,
+    search_by_topics,
 )
 
 
@@ -2406,3 +2408,259 @@ More coding content.""",
         # - 1 "programming" match in frontmatter keywords (2 points)
         # Total: 2 + 1 + 2 + 2 = 7 points
         assert score == 7
+
+
+class TestMoodSearch:
+    """Test mood-based search functionality."""
+
+    def test_search_by_mood_exact_match(self):
+        """Test exact mood matching."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create test files with different moods
+            happy_file = create_test_file_with_frontmatter(
+                temp_dir, "happy.md", "Happy content", {"mood": "happy"}
+            )
+            productive_file = create_test_file_with_frontmatter(
+                temp_dir, "productive.md", "Work content", {"mood": "productive"}
+            )
+            stressed_file = create_test_file_with_frontmatter(
+                temp_dir, "stressed.md", "Stressed content", {"mood": "stressed"}
+            )
+
+            # Test exact match
+            results = search_by_mood("happy", exact_match=True, journal_dir=temp_dir)
+
+            assert len(results) == 1
+            assert results[0]["mood"] == "happy"
+            assert "happy.md" in results[0]["file_path"]
+
+    def test_search_by_mood_partial_match(self):
+        """Test partial mood matching."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create test file with compound mood
+            compound_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "compound.md",
+                "Mixed feelings",
+                {"mood": "happy and productive"},
+            )
+
+            # Test partial match
+            results = search_by_mood("happy", exact_match=False, journal_dir=temp_dir)
+
+            assert len(results) == 1
+            assert results[0]["mood"] == "happy and productive"
+
+    def test_search_by_mood_case_insensitive(self):
+        """Test case insensitive mood search."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            happy_file = create_test_file_with_frontmatter(
+                temp_dir, "happy.md", "Happy content", {"mood": "Happy"}
+            )
+
+            # Test case insensitive search
+            results = search_by_mood("happy", exact_match=True, journal_dir=temp_dir)
+
+            assert len(results) == 1
+            assert results[0]["mood"] == "Happy"
+
+    def test_search_by_mood_no_matches(self):
+        """Test mood search with no matches."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sad_file = create_test_file_with_frontmatter(
+                temp_dir, "sad.md", "Sad content", {"mood": "sad"}
+            )
+
+            # Search for non-existent mood
+            results = search_by_mood("happy", journal_dir=temp_dir)
+
+            assert len(results) == 0
+
+    def test_search_by_mood_no_mood_field(self):
+        """Test mood search with files that have no mood field."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            no_mood_file = create_test_file_with_frontmatter(
+                temp_dir, "no_mood.md", "Content without mood", {"keywords": ["test"]}
+            )
+
+            results = search_by_mood("happy", journal_dir=temp_dir)
+
+            assert len(results) == 0
+
+    def test_search_by_mood_empty_parameter(self):
+        """Test mood search with empty mood parameter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with pytest.raises(ValueError, match="Mood parameter cannot be empty"):
+                search_by_mood("", journal_dir=temp_dir)
+
+    def test_search_by_mood_nonexistent_directory(self):
+        """Test mood search with non-existent directory."""
+        results = search_by_mood("happy", journal_dir="/nonexistent/path")
+        assert len(results) == 0
+
+
+class TestTopicsSearch:
+    """Test topics-based search functionality."""
+
+    def test_search_by_topics_single_topic(self):
+        """Test search with single topic."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "work.md",
+                "Work content",
+                {"topics": ["work", "productivity"]},
+            )
+            personal_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "personal.md",
+                "Personal content",
+                {"topics": ["personal", "growth"]},
+            )
+
+            results = search_by_topics("work", journal_dir=temp_dir)
+
+            assert len(results) == 1
+            assert "work" in results[0]["topics"]
+            assert "work.md" in results[0]["file_path"]
+
+    def test_search_by_topics_multiple_topics_any_match(self):
+        """Test search with multiple topics, any match."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "work.md",
+                "Work content",
+                {"topics": ["work", "productivity"]},
+            )
+            health_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "health.md",
+                "Health content",
+                {"topics": ["health", "exercise"]},
+            )
+            mixed_file = create_test_file_with_frontmatter(
+                temp_dir, "mixed.md", "Mixed content", {"topics": ["work", "health"]}
+            )
+
+            results = search_by_topics(
+                ["work", "exercise"], match_all=False, journal_dir=temp_dir
+            )
+
+            # Should match work.md, health.md, and mixed.md
+            assert len(results) == 3
+
+    def test_search_by_topics_multiple_topics_all_match(self):
+        """Test search with multiple topics, all must match."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "work.md",
+                "Work content",
+                {"topics": ["work", "productivity"]},
+            )
+            mixed_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "mixed.md",
+                "Mixed content",
+                {"topics": ["work", "health", "productivity"]},
+            )
+
+            results = search_by_topics(
+                ["work", "productivity"], match_all=True, journal_dir=temp_dir
+            )
+
+            # Should match both files that contain both topics
+            assert len(results) == 2
+
+    def test_search_by_topics_case_insensitive(self):
+        """Test case insensitive topics search."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "work.md",
+                "Work content",
+                {"topics": ["Work", "Productivity"]},
+            )
+
+            results = search_by_topics("work", journal_dir=temp_dir)
+
+            assert len(results) == 1
+            assert "Work" in results[0]["topics"]
+
+    def test_search_by_topics_scoring(self):
+        """Test topics search result scoring."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            exact_match_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "exact.md",
+                "Exact match",
+                {"topics": ["work", "productivity"]},
+            )
+            partial_match_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "partial.md",
+                "Partial match",
+                {"topics": ["workplace", "efficiency"]},
+            )
+
+            results = search_by_topics(["work"], journal_dir=temp_dir)
+
+            # Should have 2 results, exact match should score higher
+            assert len(results) == 2
+            # Results should be sorted by score (highest first)
+            assert results[0]["topic_match_score"] >= results[1]["topic_match_score"]
+
+    def test_search_by_topics_no_matches(self):
+        """Test topics search with no matches."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "work.md",
+                "Work content",
+                {"topics": ["work", "productivity"]},
+            )
+
+            results = search_by_topics("travel", journal_dir=temp_dir)
+
+            assert len(results) == 0
+
+    def test_search_by_topics_no_topics_field(self):
+        """Test topics search with files that have no topics field."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            no_topics_file = create_test_file_with_frontmatter(
+                temp_dir, "no_topics.md", "Content without topics", {"mood": "happy"}
+            )
+
+            results = search_by_topics("work", journal_dir=temp_dir)
+
+            assert len(results) == 0
+
+    def test_search_by_topics_empty_parameter(self):
+        """Test topics search with empty topics parameter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with pytest.raises(ValueError, match="Topics parameter cannot be empty"):
+                search_by_topics("", journal_dir=temp_dir)
+
+            with pytest.raises(ValueError, match="Topics cannot be empty"):
+                search_by_topics([], journal_dir=temp_dir)
+
+    def test_search_by_topics_string_input(self):
+        """Test topics search with string input (single topic)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_file = create_test_file_with_frontmatter(
+                temp_dir,
+                "work.md",
+                "Work content",
+                {"topics": ["work", "productivity"]},
+            )
+
+            results = search_by_topics("work", journal_dir=temp_dir)
+
+            assert len(results) == 1
+            assert "work" in results[0]["topics"]
+
+    def test_search_by_topics_nonexistent_directory(self):
+        """Test topics search with non-existent directory."""
+        results = search_by_topics("work", journal_dir="/nonexistent/path")
+        assert len(results) == 0

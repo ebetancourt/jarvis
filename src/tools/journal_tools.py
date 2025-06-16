@@ -1094,8 +1094,9 @@ def search_by_keywords(
         search_frontmatter: Whether to search in frontmatter fields (default: True)
         journal_dir: Optional custom journal directory path
 
-    Returns:
-        List[Dict[str, Any]]: List of matching journal entries with metadata
+            Returns:
+        List[Dict[str, Any]]: List of matching journal entries with
+            metadata
 
     Raises:
         ValueError: If no keywords provided or invalid parameters
@@ -1321,5 +1322,233 @@ def _calculate_match_score(
         if frontmatter_text:
             frontmatter_matches = frontmatter_text.count(search_keyword)
             score += frontmatter_matches * 2
+
+    return score
+
+
+def search_by_mood(
+    mood: str, exact_match: bool = False, journal_dir: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Search for journal entries by mood from frontmatter.
+
+    Args:
+        mood: Mood to search for (e.g., "happy", "productive", "stressed")
+        exact_match: If True, requires exact mood match. If False, allows
+            partial matches
+        journal_dir: Optional custom journal directory path
+
+    Returns:
+        List[Dict[str, Any]]: List of matching journal entries with metadata
+
+    Raises:
+        ValueError: If mood parameter is empty
+        OSError: If journal directory cannot be accessed
+    """
+    if not mood or not mood.strip():
+        raise ValueError("Mood parameter cannot be empty")
+
+    clean_mood = mood.strip()
+
+    if journal_dir is None:
+        journal_dir = get_journal_directory()
+
+    if not os.path.exists(journal_dir):
+        return []  # No journal directory means no entries
+
+    results = []
+
+    try:
+        # Get all .md files in journal directory
+        journal_files = [f for f in os.listdir(journal_dir) if f.endswith(".md")]
+
+        for filename in journal_files:
+            file_path = os.path.join(journal_dir, filename)
+
+            try:
+                # Get metadata
+                metadata = get_journal_metadata(file_path)
+                file_mood = metadata.get("mood")
+
+                # Check if mood matches
+                if _mood_matches(file_mood, clean_mood, exact_match):
+                    results.append(metadata)
+
+            except (OSError, yaml.YAMLError) as e:
+                # Log error but continue with other files
+                warnings.warn(f"Could not process {filename}: {e}")
+                continue
+
+    except OSError as e:
+        raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
+
+    # Sort results by date (newest first)
+    results.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+    return results
+
+
+def _mood_matches(
+    file_mood: Optional[str], search_mood: str, exact_match: bool
+) -> bool:
+    """
+    Check if a file's mood matches the search criteria.
+
+    Args:
+        file_mood: The mood from the file's frontmatter
+        search_mood: The mood being searched for
+        exact_match: Whether to require exact match or allow partial match
+
+    Returns:
+        bool: True if mood matches
+    """
+    if not file_mood:
+        return False
+
+    if exact_match:
+        return file_mood.lower() == search_mood.lower()
+    else:
+        return search_mood.lower() in file_mood.lower()
+
+
+def search_by_topics(
+    topics: Union[str, List[str]],
+    match_all: bool = False,
+    journal_dir: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Search for journal entries by topics from frontmatter.
+
+    Args:
+        topics: Topic(s) to search for (string or list of strings)
+        match_all: If True, entry must contain ALL topics. If False, any topic matches
+        journal_dir: Optional custom journal directory path
+
+    Returns:
+        List[Dict[str, Any]]: List of matching journal entries with metadata
+
+    Raises:
+        ValueError: If topics parameter is empty
+        OSError: If journal directory cannot be accessed
+    """
+    if not topics:
+        raise ValueError("Topics parameter cannot be empty")
+
+    # Normalize topics to list
+    if isinstance(topics, str):
+        topic_list = [topics.strip()]
+    else:
+        topic_list = [t.strip() for t in topics if t.strip()]
+
+    if not topic_list:
+        raise ValueError("Topics cannot be empty")
+
+    if journal_dir is None:
+        journal_dir = get_journal_directory()
+
+    if not os.path.exists(journal_dir):
+        return []  # No journal directory means no entries
+
+    results = []
+
+    try:
+        # Get all .md files in journal directory
+        journal_files = [f for f in os.listdir(journal_dir) if f.endswith(".md")]
+
+        for filename in journal_files:
+            file_path = os.path.join(journal_dir, filename)
+
+            try:
+                # Get metadata
+                metadata = get_journal_metadata(file_path)
+                file_topics = metadata.get("topics", [])
+
+                # Check if topics match
+                if _topics_match(file_topics, topic_list, match_all):
+                    # Calculate topic match score for ranking
+                    match_score = _calculate_topic_match_score(file_topics, topic_list)
+                    metadata["topic_match_score"] = match_score
+                    results.append(metadata)
+
+            except (OSError, yaml.YAMLError) as e:
+                # Log error but continue with other files
+                warnings.warn(f"Could not process {filename}: {e}")
+                continue
+
+    except OSError as e:
+        raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
+
+    # Sort results by topic match score (highest first), then by date (newest first)
+    results.sort(
+        key=lambda x: (-x.get("topic_match_score", 0), x.get("date", "")), reverse=True
+    )
+
+    return results
+
+
+def _topics_match(
+    file_topics: List[str], search_topics: List[str], match_all: bool
+) -> bool:
+    """
+    Check if a file's topics match the search criteria.
+
+    Args:
+        file_topics: List of topics from the file's frontmatter
+        search_topics: List of topics being searched for
+        match_all: Whether all topics must match or just any
+
+    Returns:
+        bool: True if topics match according to criteria
+    """
+    if not file_topics:
+        return False
+
+    # Normalize for case-insensitive comparison
+    file_topics_lower = [t.lower() for t in file_topics]
+    search_topics_lower = [t.lower() for t in search_topics]
+
+    if match_all:
+        # All search topics must be found in file topics
+        return all(topic in file_topics_lower for topic in search_topics_lower)
+    else:
+        # Any search topic found in file topics is a match
+        return any(topic in file_topics_lower for topic in search_topics_lower)
+
+
+def _calculate_topic_match_score(
+    file_topics: List[str], search_topics: List[str]
+) -> int:
+    """
+    Calculate a score for topic matching to rank results.
+
+    Higher scores indicate better matches based on:
+    - Number of matching topics
+    - Exact vs partial matches
+
+    Args:
+        file_topics: List of topics from the file
+        search_topics: List of topics being searched for
+
+    Returns:
+        int: Match score (higher = better match)
+    """
+    if not file_topics or not search_topics:
+        return 0
+
+    score = 0
+    file_topics_lower = [t.lower() for t in file_topics]
+
+    for search_topic in search_topics:
+        search_topic_lower = search_topic.lower()
+
+        # Exact topic match (higher score)
+        if search_topic_lower in file_topics_lower:
+            score += 3
+        else:
+            # Partial topic match (lower score)
+            for file_topic in file_topics_lower:
+                if search_topic_lower in file_topic or file_topic in search_topic_lower:
+                    score += 1
+                    break  # Only count once per search topic
 
     return score

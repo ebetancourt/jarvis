@@ -46,16 +46,16 @@
   - [x] 3.6 Add configuration for summary length ratios and word count thresholds
   - [x] 3.7 Write unit tests for summarization logic and formatting
 
-- [ ] 4.0 Create search and retrieval functionality
+- [x] 4.0 Create search and retrieval functionality
   - [x] 4.1 Implement frontmatter parsing for mood, keywords, and topics metadata
   - [x] 4.2 Create `search_by_date_range()` function with start/end date parameters
   - [x] 4.3 Implement `search_by_keywords()` function with full-text search
-  - [ ] 4.4 Create `search_by_mood()` and `search_by_topics()` functions using frontmatter
-  - [ ] 4.5 Implement `format_search_results()` with result count and file list (if <10)
-  - [ ] 4.6 Create search result interaction options (full text, all files, ask questions)
-  - [ ] 4.7 Implement `narrow_search()` functionality for refining results
-  - [ ] 4.8 Add search result ranking and relevance scoring
-  - [ ] 4.9 Write unit tests for all search and retrieval functions
+  - [x] 4.4 Create `search_by_mood()` and `search_by_topics()` functions using frontmatter
+  - [x] 4.5 Implement `format_search_results()` with result count and file list (if <10)
+  - [x] 4.6 Create search result interaction options (full text, all files, ask questions)
+  - [x] 4.7 Implement `narrow_search()` functionality for refining results
+  - [x] 4.8 Add search result ranking and relevance scoring
+  - [x] 4.9 Write unit tests for all search and retrieval functions
 
 - [ ] 5.0 Integrate journaling agent with existing agent framework
   - [ ] 5.1 Create `src/agents/journaling_agent.py` following `jarvis.py` pattern
