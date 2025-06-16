@@ -33,8 +33,8 @@
   - [x] 2.3 Implement question flow logic (ask up to 2 questions, then process responses)
   - [x] 2.4 Add completion signal detection ("I'm Done", empty responses)
   - [x] 2.5 Create confirmation message system ("Great, saving this entry!")
-  - [ ] 2.6 Design question bank focused on priorities, emotions, and deeper insights
-  - [ ] 2.7 Implement conversation memory to avoid repeating questions within a session
+  - [x] 2.6 Design question bank focused on priorities, emotions, and deeper insights
+  - [x] 2.7 Implement conversation memory to avoid repeating questions within a session
   - [ ] 2.8 Write unit tests for conversation flow and question generation
 
 - [ ] 3.0 Build content processing and summarization capabilities

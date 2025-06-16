@@ -18,6 +18,8 @@ class JournalingConversationState:
         self.conversation_phase: str = (
             "initial"  # "initial", "questioning", "completion"
         )
+        self.used_question_categories: List[str] = []
+        self.question_keywords_used: set = set()
         self.completion_signals: List[str] = [
             "I'm done",
             "i'm done",
@@ -49,6 +51,45 @@ class JournalingConversationState:
         self.session_active = False
         self.initial_response = ""
         self.conversation_phase = "initial"
+        self.used_question_categories = []
+        self.question_keywords_used = set()
+
+    def add_question_with_memory(self, question: str, category: str) -> None:
+        """Add a question to memory with category tracking."""
+        self.questions_asked.append(question)
+        self.used_question_categories.append(category)
+
+        # Extract key words from the question for memory
+        question_words = set(question.lower().split())
+        # Filter out common words that don't help with uniqueness
+        common_words = {
+            "what",
+            "how",
+            "when",
+            "where",
+            "why",
+            "are",
+            "is",
+            "the",
+            "you",
+            "your",
+            "a",
+            "an",
+            "and",
+            "or",
+            "but",
+            "do",
+            "did",
+            "would",
+            "could",
+            "should",
+            "that",
+            "this",
+            "today",
+            "about",
+        }
+        meaningful_words = question_words - common_words
+        self.question_keywords_used.update(meaningful_words)
 
     def can_ask_more_questions(self) -> bool:
         """Check if we can still ask more questions in this session."""
@@ -71,103 +112,133 @@ class JournalingConversationState:
         return "\n\n".join(summary_parts)
 
 
-def generate_guiding_questions(
-    user_response: str, previous_questions: List[str], context: Optional[str] = None
-) -> str:
+def generate_guiding_questions_with_memory(
+    user_response: str,
+    conversation_state: JournalingConversationState,
+    context: Optional[str] = None,
+) -> tuple[str, str]:
     """
-    Generate CBT-style guiding questions based on user responses.
+    Generate CBT-style guiding questions with enhanced memory to avoid repetition.
 
-    Uses cognitive behavioral therapy principles to ask thoughtful questions
-    that encourage reflection on thoughts, feelings, behaviors, and patterns.
+    Uses cognitive behavioral therapy principles and memory tracking to ensure
+    diverse, non-repetitive questions that encourage deeper reflection.
 
     Args:
         user_response: The user's most recent response
-        previous_questions: List of questions already asked in this session
+        conversation_state: Current conversation state with memory tracking
         context: Optional additional context about the conversation
 
     Returns:
-        str: A thoughtful follow-up question to encourage deeper reflection
+        tuple[str, str]: (question_text, category_used)
     """
 
-    # CBT-style question banks organized by focus area
-    emotion_questions = [
-        "What emotions are you experiencing as you think about this?",
-        "How are you feeling in your body right now when you reflect on this?",
-        "What feelings came up for you during this situation?",
-        "Can you name the strongest emotion you felt today?",
-        "What triggered that emotional response for you?",
-        "How did your mood shift throughout the day?",
+    # CBT-style question banks organized by focus area with categories
+    question_banks = {
+        "emotions": [
+            "What emotions are you experiencing as you think about this?",
+            "How are you feeling in your body right now when you reflect on this?",
+            "What feelings came up for you during this situation?",
+            "Can you name the strongest emotion you felt today?",
+            "What triggered that emotional response for you?",
+            "How did your mood shift throughout the day?",
+        ],
+        "thoughts": [
+            "What thoughts were going through your mind during that moment?",
+            "What assumptions might you have been making in that situation?",
+            "How would you challenge that thought if a friend shared it with you?",
+            "What evidence supports or contradicts that belief?",
+            "What would you tell someone else who had this same thought?",
+            "Is there another way to look at this situation?",
+        ],
+        "behaviors": [
+            "How did you respond to that challenge?",
+            "What actions did you take that you're proud of today?",
+            "What would you do differently if faced with a similar situation?",
+            "What coping strategies did you use today?",
+            "How did your actions align with your values today?",
+            "What behavior patterns are you noticing in yourself?",
+        ],
+        "growth": [
+            "What did you learn about yourself today?",
+            "What would you like to remember from today's experience?",
+            "How has this situation helped you grow?",
+            "What strengths did you discover or use today?",
+            "What are you grateful for from today?",
+            "What would 'future you' want to know about today?",
+        ],
+        "priorities": [
+            "What mattered most to you today?",
+            "How did you spend your energy today?",
+            "What activities brought you the most fulfillment?",
+            "What would you prioritize differently tomorrow?",
+            "How did today align with your bigger goals?",
+            "What deserves more of your attention going forward?",
+        ],
+    }
+
+    # Find available categories (not recently used)
+    available_categories = [
+        cat
+        for cat in question_banks.keys()
+        if cat not in conversation_state.used_question_categories
     ]
 
-    thought_pattern_questions = [
-        "What thoughts were going through your mind during that moment?",
-        "What assumptions might you have been making in that situation?",
-        "How would you challenge that thought if a friend shared it with you?",
-        "What evidence supports or contradicts that belief?",
-        "What would you tell someone else who had this same thought?",
-        "Is there another way to look at this situation?",
-    ]
+    # If all categories used, reset and allow reuse
+    if not available_categories:
+        available_categories = list(question_banks.keys())
 
-    behavior_questions = [
-        "How did you respond to that challenge?",
-        "What actions did you take that you're proud of today?",
-        "What would you do differently if faced with a similar situation?",
-        "What coping strategies did you use today?",
-        "How did your actions align with your values today?",
-        "What behavior patterns are you noticing in yourself?",
-    ]
-
-    growth_questions = [
-        "What did you learn about yourself today?",
-        "What would you like to remember from today's experience?",
-        "How has this situation helped you grow?",
-        "What strengths did you discover or use today?",
-        "What are you grateful for from today?",
-        "What would 'future you' want to know about today?",
-    ]
-
-    priority_questions = [
-        "What mattered most to you today?",
-        "How did you spend your energy today?",
-        "What activities brought you the most fulfillment?",
-        "What would you prioritize differently tomorrow?",
-        "How did today align with your bigger goals?",
-        "What deserves more of your attention going forward?",
-    ]
-
-    # Combine all question banks
-    all_questions = (
-        emotion_questions
-        + thought_pattern_questions
-        + behavior_questions
-        + growth_questions
-        + priority_questions
-    )
-
-    # Filter out questions that are too similar to previously asked ones
+    # Filter questions by memory to avoid keyword overlap
     available_questions = []
-    for question in all_questions:
-        # Simple similarity check - avoid questions with overlapping key words
-        is_similar = False
-        question_words = set(question.lower().split())
+    selected_category = None
 
-        for prev_q in previous_questions:
-            prev_words = set(prev_q.lower().split())
-            # If more than 2 key words overlap, consider it similar
-            overlap = len(question_words.intersection(prev_words))
-            if overlap > 2:
-                is_similar = True
-                break
+    for category in available_categories:
+        for question in question_banks[category]:
+            question_words = set(question.lower().split())
+            # Filter meaningful words
+            common_words = {
+                "what",
+                "how",
+                "when",
+                "where",
+                "why",
+                "are",
+                "is",
+                "the",
+                "you",
+                "your",
+                "a",
+                "an",
+                "and",
+                "or",
+                "but",
+                "do",
+                "did",
+                "would",
+                "could",
+                "should",
+                "that",
+                "this",
+                "today",
+                "about",
+            }
+            meaningful_words = question_words - common_words
 
-        if not is_similar:
-            available_questions.append(question)
+            # Check for keyword overlap with previously used questions
+            overlap = len(
+                meaningful_words.intersection(conversation_state.question_keywords_used)
+            )
 
-    # If we've exhausted unique questions, fall back to growth questions
+            # Allow question if overlap is minimal (≤ 1 word)
+            if overlap <= 1:
+                available_questions.append((question, category))
+
+    # Fallback: if no questions available, use growth questions
     if not available_questions:
-        available_questions = growth_questions
+        fallback_questions = question_banks["growth"]
+        available_questions = [(q, "growth") for q in fallback_questions]
 
-    # Select a random question from available options
-    selected_question = random.choice(available_questions)
+    # Select random question from available options
+    selected_question, selected_category = random.choice(available_questions)
 
     # Add contextual intro based on response content
     response_lower = user_response.lower()
@@ -187,7 +258,56 @@ def generate_guiding_questions(
     else:
         intro = "Thank you for sharing that. "
 
-    return f"{intro}{selected_question}"
+    final_question = f"{intro}{selected_question}"
+
+    return final_question, selected_category
+
+
+# Legacy function for backward compatibility
+def generate_guiding_questions(
+    user_response: str, previous_questions: List[str], context: Optional[str] = None
+) -> str:
+    """Legacy wrapper for backward compatibility."""
+    # Create a temporary state for the old interface
+    temp_state = JournalingConversationState()
+    temp_state.questions_asked = previous_questions
+
+    # Extract keywords from previous questions
+    for q in previous_questions:
+        words = set(q.lower().split())
+        common_words = {
+            "what",
+            "how",
+            "when",
+            "where",
+            "why",
+            "are",
+            "is",
+            "the",
+            "you",
+            "your",
+            "a",
+            "an",
+            "and",
+            "or",
+            "but",
+            "do",
+            "did",
+            "would",
+            "could",
+            "should",
+            "that",
+            "this",
+            "today",
+            "about",
+        }
+        meaningful_words = words - common_words
+        temp_state.question_keywords_used.update(meaningful_words)
+
+    question, _ = generate_guiding_questions_with_memory(
+        user_response, temp_state, context
+    )
+    return question
 
 
 def process_conversation_flow(
@@ -242,10 +362,10 @@ def _handle_initial_phase(
 
     # Generate first follow-up question
     if conversation_state.can_ask_more_questions():
-        question = generate_guiding_questions(
-            user_message, conversation_state.questions_asked
+        question, category = generate_guiding_questions_with_memory(
+            user_message, conversation_state
         )
-        conversation_state.add_question(question)
+        conversation_state.add_question_with_memory(question, category)
         return question, False
     else:
         # Skip questioning if no questions allowed
@@ -263,10 +383,10 @@ def _handle_questioning_phase(
     # Check if we can ask more questions
     if conversation_state.can_ask_more_questions():
         # Generate next question based on the latest response
-        question = generate_guiding_questions(
-            user_message, conversation_state.questions_asked
+        question, category = generate_guiding_questions_with_memory(
+            user_message, conversation_state
         )
-        conversation_state.add_question(question)
+        conversation_state.add_question_with_memory(question, category)
         return question, False
     else:
         # We've reached the question limit, move to completion
