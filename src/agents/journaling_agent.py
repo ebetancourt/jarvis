@@ -13,6 +13,11 @@ class JournalingConversationState:
         self.questions_asked: List[str] = []
         self.responses_received: List[str] = []
         self.session_active: bool = False
+        self.max_questions: int = 2
+        self.initial_response: str = ""
+        self.conversation_phase: str = (
+            "initial"  # "initial", "questioning", "completion"
+        )
         self.completion_signals: List[str] = [
             "I'm done",
             "i'm done",
@@ -42,6 +47,28 @@ class JournalingConversationState:
         self.questions_asked = []
         self.responses_received = []
         self.session_active = False
+        self.initial_response = ""
+        self.conversation_phase = "initial"
+
+    def can_ask_more_questions(self) -> bool:
+        """Check if we can still ask more questions in this session."""
+        return len(self.questions_asked) < self.max_questions
+
+    def get_conversation_summary(self) -> str:
+        """Get a summary of the conversation for journal entry."""
+        summary_parts = []
+
+        if self.initial_response:
+            summary_parts.append(self.initial_response)
+
+        # Add question-response pairs
+        for i, (question, response) in enumerate(
+            zip(self.questions_asked, self.responses_received)
+        ):
+            if response.strip():  # Only include non-empty responses
+                summary_parts.append(f"\n\nReflection {i+1}: {response}")
+
+        return "\n\n".join(summary_parts)
 
 
 def generate_guiding_questions(
@@ -161,6 +188,113 @@ def generate_guiding_questions(
         intro = "Thank you for sharing that. "
 
     return f"{intro}{selected_question}"
+
+
+def process_conversation_flow(
+    user_message: str, conversation_state: JournalingConversationState
+) -> tuple[str, bool]:
+    """
+    Process the conversation flow logic with question limits and phase management.
+
+    Manages the conversation through three phases:
+    1. Initial: Capture the user's opening response
+    2. Questioning: Ask up to 2 follow-up questions
+    3. Completion: Process final responses and prepare for journal saving
+
+    Args:
+        user_message: The user's current message
+        conversation_state: Current state of the conversation
+
+    Returns:
+        tuple[str, bool]: (response_message, should_save_entry)
+    """
+
+    # Check for completion signals first
+    if conversation_state.is_session_complete(user_message):
+        conversation_state.conversation_phase = "completion"
+        return _handle_completion_phase(conversation_state)
+
+    # Handle different conversation phases
+    if conversation_state.conversation_phase == "initial":
+        return _handle_initial_phase(user_message, conversation_state)
+
+    elif conversation_state.conversation_phase == "questioning":
+        return _handle_questioning_phase(user_message, conversation_state)
+
+    elif conversation_state.conversation_phase == "completion":
+        return _handle_completion_phase(conversation_state)
+
+    else:
+        # Default fallback
+        return (
+            "I'm here to help you reflect on your day. How was your day today?",
+            False,
+        )
+
+
+def _handle_initial_phase(
+    user_message: str, conversation_state: JournalingConversationState
+) -> tuple[str, bool]:
+    """Handle the initial response from the user."""
+    conversation_state.initial_response = user_message
+    conversation_state.session_active = True
+    conversation_state.conversation_phase = "questioning"
+
+    # Generate first follow-up question
+    if conversation_state.can_ask_more_questions():
+        question = generate_guiding_questions(
+            user_message, conversation_state.questions_asked
+        )
+        conversation_state.add_question(question)
+        return question, False
+    else:
+        # Skip questioning if no questions allowed
+        conversation_state.conversation_phase = "completion"
+        return _handle_completion_phase(conversation_state)
+
+
+def _handle_questioning_phase(
+    user_message: str, conversation_state: JournalingConversationState
+) -> tuple[str, bool]:
+    """Handle follow-up questions and responses."""
+    # Store the response to the last question
+    conversation_state.add_response(user_message)
+
+    # Check if we can ask more questions
+    if conversation_state.can_ask_more_questions():
+        # Generate next question based on the latest response
+        question = generate_guiding_questions(
+            user_message, conversation_state.questions_asked
+        )
+        conversation_state.add_question(question)
+        return question, False
+    else:
+        # We've reached the question limit, move to completion
+        conversation_state.conversation_phase = "completion"
+        return _handle_completion_phase(conversation_state)
+
+
+def _handle_completion_phase(
+    conversation_state: JournalingConversationState,
+) -> tuple[str, bool]:
+    """Handle the completion phase and prepare for journal saving."""
+    # Create completion message
+    responses_count = len(
+        [r for r in conversation_state.responses_received if r.strip()]
+    )
+
+    if responses_count > 0:
+        completion_message = (
+            "Thank you for taking the time to reflect today. I'll save this "
+            "entry to your daily journal. Your thoughts and insights are valuable!"
+        )
+    else:
+        completion_message = (
+            "Thank you for sharing your initial thoughts. I'll save this to "
+            "your daily journal. Even brief reflections can be meaningful!"
+        )
+
+    return completion_message, True
 
 
 # Initialize conversation state
