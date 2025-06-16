@@ -20,6 +20,7 @@ from tools.journal_tools import (
     count_words,
     exceeds_word_limit,
     generate_summary,
+    validate_summary_length,
 )
 
 
@@ -953,3 +954,63 @@ class TestSummarization:
 
         with pytest.raises(OSError, match="AI model returned empty summary"):
             generate_summary(test_entry)
+
+    def test_validate_summary_length_within_limit(self):
+        """Test that validate_summary_length correctly identifies valid summaries."""
+        # 100-word original text
+        original_text = " ".join([f"word{i}" for i in range(100)])
+
+        # 15-word summary (15% of original, within 20% limit)
+        short_summary = " ".join([f"summary{i}" for i in range(15)])
+
+        assert validate_summary_length(original_text, short_summary, 0.2) == True
+
+        # Exactly at limit (20 words = 20% of 100)
+        exact_limit_summary = " ".join([f"summary{i}" for i in range(20)])
+        assert validate_summary_length(original_text, exact_limit_summary, 0.2) == True
+
+    def test_validate_summary_length_exceeds_limit(self):
+        """Test that validate_summary_length correctly identifies summaries that exceed limit."""
+        # 100-word original text
+        original_text = " ".join([f"word{i}" for i in range(100)])
+
+        # 25-word summary (25% of original, exceeds 20% limit)
+        long_summary = " ".join([f"summary{i}" for i in range(25)])
+
+        assert validate_summary_length(original_text, long_summary, 0.2) == False
+
+    def test_validate_summary_length_custom_ratios(self):
+        """Test validate_summary_length with different ratio settings."""
+        original_text = " ".join([f"word{i}" for i in range(200)])  # 200 words
+
+        # Test with 10% ratio
+        summary_15_words = " ".join([f"summary{i}" for i in range(15)])  # 7.5%
+        summary_25_words = " ".join([f"summary{i}" for i in range(25)])  # 12.5%
+
+        assert validate_summary_length(original_text, summary_15_words, 0.1) == True
+        assert validate_summary_length(original_text, summary_25_words, 0.1) == False
+
+        # Test with 30% ratio
+        summary_50_words = " ".join([f"summary{i}" for i in range(50)])  # 25%
+        summary_70_words = " ".join([f"summary{i}" for i in range(70)])  # 35%
+
+        assert validate_summary_length(original_text, summary_50_words, 0.3) == True
+        assert validate_summary_length(original_text, summary_70_words, 0.3) == False
+
+    def test_validate_summary_length_edge_cases(self):
+        """Test validate_summary_length with edge cases."""
+        # Very short original text
+        short_original = "This is short text."  # 4 words
+        summary = "Short summary."  # 2 words (50%)
+
+        # With 20% ratio, 2 words should fail (20% of 4 = 0.8, rounds to 0)
+        assert validate_summary_length(short_original, summary, 0.2) == False
+
+        # With 60% ratio, 2 words should pass
+        assert validate_summary_length(short_original, summary, 0.6) == True
+
+        # Empty summary
+        assert validate_summary_length(short_original, "", 0.2) == True
+
+        # Empty original
+        assert validate_summary_length("", "summary", 0.2) == False

@@ -430,6 +430,27 @@ def exceeds_word_limit(text: str, word_limit: int = 150) -> bool:
     return word_count > word_limit
 
 
+def validate_summary_length(
+    original_text: str, summary_text: str, max_ratio: float = 0.2
+) -> bool:
+    """
+    Validates that a summary meets the length requirement relative to original text.
+
+    Args:
+        original_text: The original text that was summarized
+        summary_text: The generated summary text
+        max_ratio: Maximum allowed ratio of summary to original text (default: 0.2)
+
+    Returns:
+        bool: True if summary meets length requirement, False otherwise
+    """
+    original_word_count = count_words(original_text)
+    summary_word_count = count_words(summary_text)
+    max_allowed_words = int(original_word_count * max_ratio)
+
+    return summary_word_count <= max_allowed_words
+
+
 def generate_summary(text: str, max_summary_ratio: float = 0.2) -> str:
     """
     Generates an AI-powered summary of a journal entry.
@@ -495,6 +516,19 @@ Please provide a thoughtful summary that the writer would find valuable for futu
         # Validate the summary isn't empty
         if not summary:
             raise OSError("AI model returned empty summary")
+
+            # Validate summary length meets the ratio requirement
+        if not validate_summary_length(text, summary, max_summary_ratio):
+            summary_word_count = count_words(summary)
+            max_allowed_words = int(word_count * max_summary_ratio)
+
+            # Log a warning but don't fail - AI models sometimes exceed guidelines
+            import warnings
+
+            warnings.warn(
+                f"Generated summary ({summary_word_count} words) exceeds target "
+                f"length ({max_allowed_words} words) for {word_count}-word entry."
+            )
 
         return summary
 
