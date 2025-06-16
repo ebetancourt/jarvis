@@ -42,7 +42,7 @@
   - [x] 3.2 Create `generate_summary()` function using AI to summarize long entries
   - [x] 3.3 Ensure summaries are less than 1/5 the length of original entry
   - [x] 3.4 Implement `format_summary_section()` to add "### Summary" heading
-  - [ ] 3.5 Integrate summary functionality into the main workflow
+  - [x] 3.5 Integrate summary functionality into the main workflow
   - [ ] 3.6 Add configuration for summary length ratios and word count thresholds
   - [ ] 3.7 Write unit tests for summarization logic and formatting
 

@@ -23,6 +23,7 @@ from tools.journal_tools import (
     validate_summary_length,
     format_summary_section,
     generate_formatted_summary,
+    save_journal_entry_with_summary,
 )
 
 
@@ -1101,3 +1102,210 @@ class TestSummarization:
         # And should match expected format
         expected = "### Summary\n\nConsistent formatting test summary."
         assert result1 == expected
+
+
+class TestIntegratedWorkflow:
+    """Test cases for the integrated workflow with summarization."""
+
+    def test_save_journal_entry_short_entry_no_summary(self):
+        """Test saving a short entry that doesn't require summarization."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                short_entry = "Today was a good day. I accomplished my main goals."
+                test_date = date(2025, 1, 10)
+                test_time = time(15, 30, 0)
+
+                result = save_journal_entry_with_summary(
+                    short_entry, test_date, test_time
+                )
+
+                # Verify success message indicates no summary needed
+                assert "under 150 word limit" in result
+                assert "📝" in result
+
+                # Verify file was created and contains entry without summary
+                file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
+                assert os.path.exists(file_path)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                assert short_entry in content
+                assert "### Summary" not in content
+                assert "## 15:30:00" in content
+
+    @patch("tools.journal_tools.get_model")
+    def test_save_journal_entry_long_entry_with_summary(self, mock_get_model):
+        """Test saving a long entry that triggers automatic summarization."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Create a long entry (over 150 words)
+                long_entry = " ".join([f"word{i}" for i in range(200)])
+                test_date = date(2025, 1, 10)
+                test_time = time(16, 45, 0)
+
+                # Mock the AI response
+                mock_model = Mock()
+                mock_response = Mock()
+                mock_response.content = "This is a test summary of the long entry."
+                mock_model.invoke.return_value = mock_response
+                mock_get_model.return_value = mock_model
+
+                result = save_journal_entry_with_summary(
+                    long_entry, test_date, test_time
+                )
+
+                # Verify success message indicates summary was added
+                assert "summary was automatically added" in result
+                assert "📝✨" in result
+                assert "200 words" in result
+
+                # Verify file was created and contains entry with summary
+                file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
+                assert os.path.exists(file_path)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                assert long_entry in content
+                assert "### Summary" in content
+                assert "This is a test summary" in content
+                assert "## 16:45:00" in content
+
+    def test_save_journal_entry_empty_content_error(self):
+        """Test that empty content raises appropriate error."""
+        test_cases = ["", "   ", "\t\n\r"]
+
+        for empty_content in test_cases:
+            with pytest.raises(ValueError, match="Cannot save empty journal entry"):
+                save_journal_entry_with_summary(empty_content)
+
+    @patch("tools.journal_tools.get_model")
+    def test_save_journal_entry_summary_failure_fallback(self, mock_get_model):
+        """Test graceful fallback when summary generation fails."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                long_entry = " ".join([f"word{i}" for i in range(200)])
+                test_date = date(2025, 1, 10)
+                test_time = time(17, 0, 0)
+
+                # Mock the AI to raise an exception
+                mock_model = Mock()
+                mock_model.invoke.side_effect = Exception("AI service unavailable")
+                mock_get_model.return_value = mock_model
+
+                with patch("warnings.warn") as mock_warn:
+                    result = save_journal_entry_with_summary(
+                        long_entry, test_date, test_time
+                    )
+
+                # Verify warning was issued and entry saved without summary
+                mock_warn.assert_called_once()
+                assert "summary generation failed" in result
+                assert "📝⚠️" in result
+
+                # Verify file was created without summary
+                file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
+                assert os.path.exists(file_path)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                assert long_entry in content
+                assert "### Summary" not in content
+
+    def test_save_journal_entry_default_datetime(self):
+        """Test saving with default date and time parameters."""
+        from datetime import date, datetime
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                entry = "Today's reflection with default timestamp."
+
+                before_call = datetime.now()
+                result = save_journal_entry_with_summary(entry)
+                after_call = datetime.now()
+
+                # Should save successfully
+                assert "Journal entry saved" in result
+                assert "📝" in result
+
+                # Verify file exists with today's date
+                today = date.today()
+                expected_filename = f"{today.strftime('%Y-%m-%d')}.md"
+
+                # Check that a file was created for today
+                journal_dir = os.path.join(temp_dir, "journal")
+                files = os.listdir(journal_dir) if os.path.exists(journal_dir) else []
+                assert expected_filename in files
+
+                # Verify content includes our entry
+                file_path = os.path.join(journal_dir, expected_filename)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                assert entry in content
+
+    def test_save_journal_entry_custom_word_limit_and_ratio(self):
+        """Test saving with custom word limit and summary ratio parameters."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Entry with exactly 100 words
+                entry_100_words = " ".join([f"word{i}" for i in range(100)])
+                test_date = date(2025, 1, 10)
+                test_time = time(18, 0, 0)
+
+                # Test with custom limit of 50 words (should trigger summary)
+                result = save_journal_entry_with_summary(
+                    entry_100_words,
+                    test_date,
+                    test_time,
+                    word_limit=50,
+                    summary_ratio=0.1,
+                )
+
+                # Should indicate summary was needed due to custom limit
+                assert "summary was automatically added" in result
+                assert "100 words" in result
+
+    def test_save_journal_entry_conversation_flow_integration(self):
+        """Test integration with typical conversation flow content."""
+        from datetime import date, time
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("tools.journal_tools.DATA_DIR", temp_dir):
+                # Simulate conversation flow output
+                conversation_content = """Today was quite challenging but ultimately rewarding.
+
+Reflection 1: I felt overwhelmed in the morning when I saw my long task list, but I managed to prioritize and focus on the most important items.
+
+Reflection 2: I learned that breaking down big tasks into smaller chunks really helps me feel less anxious and more in control of my day."""
+
+                test_date = date(2025, 1, 10)
+                test_time = time(19, 30, 0)
+
+                result = save_journal_entry_with_summary(
+                    conversation_content, test_date, test_time
+                )
+
+                # Verify successful save
+                assert "Journal entry saved" in result
+                assert "📝" in result
+
+                # Verify file content preserves conversation structure
+                file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                assert "Today was quite challenging" in content
+                assert "Reflection 1:" in content
+                assert "Reflection 2:" in content
+                assert "## 19:30:00" in content

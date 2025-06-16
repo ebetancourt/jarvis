@@ -11,6 +11,7 @@ from agents.langgraph_supervisor_agent import langgraph_supervisor_agent
 from agents.rag_assistant import rag_assistant
 from agents.research_assistant import research_assistant
 from agents.jarvis import jarvis_agent
+from agents.journaling_agent import journaling_agent
 from schema import AgentInfo
 
 DEFAULT_AGENT = "research-assistant"
@@ -44,6 +45,10 @@ agents: dict[str, Agent] = {
     "knowledge-base-agent": Agent(
         description="A retrieval-augmented generation agent using Amazon Bedrock Knowledge Base",
         graph=kb_agent,
+    ),
+    "journaling-agent": Agent(
+        description="A daily journaling assistant with guided prompts and automatic summarization",
+        graph=journaling_agent,
     ),
 }
 

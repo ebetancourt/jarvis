@@ -2,6 +2,10 @@ from datetime import datetime
 from typing import List, Optional
 import random
 from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import tool
+
+# Import journal tools for integration
+from tools.journal_tools import save_journal_entry_with_summary
 
 
 # Conversation state management
@@ -479,8 +483,31 @@ def generate_confirmation_message(
 # Initialize conversation state
 conversation_state = JournalingConversationState()
 
-# Tools for the journaling agent
-tools = []  # Will be populated with journal tools when implemented
+
+@tool
+def save_journal_entry(conversation_content: str) -> str:
+    """
+    Save a journal entry with automatic summarization for longer entries.
+
+    This tool integrates word counting, AI summarization, and file operations
+    to provide a complete journaling workflow. It automatically adds summaries
+    for entries longer than 150 words.
+
+    Args:
+        conversation_content: The complete journal entry content to save
+
+    Returns:
+        str: Success message with details about the saved entry
+    """
+    try:
+        result = save_journal_entry_with_summary(conversation_content)
+        return result
+    except Exception as e:
+        return f"Failed to save journal entry: {str(e)}"
+
+
+# Tools for the journaling agent - now includes the integrated saving functionality
+tools = [save_journal_entry]
 
 # Get current date for context
 current_date = datetime.now().strftime("%Y-%m-%d")
@@ -495,15 +522,21 @@ journaling_agent_prompt = (
     "1. Help users capture meaningful daily reflections\n"
     "2. Ask thoughtful, CBT-style questions to encourage deeper insights\n"
     "3. Guide users through a natural conversation flow\n"
-    "4. Save their entries to daily journal files\n\n"
+    "4. Save their entries to daily journal files with automatic summarization\n\n"
     "Conversation Flow:\n"
     "- Start by welcoming the user and asking how their day went\n"
     "- Ask up to 2 follow-up questions based on their responses to encourage "
     "deeper reflection\n"
     "- Focus on priorities, emotions, challenges, and insights\n"
     '- When the user indicates they\'re done (says "I\'m done", "done", '
-    '"finish", or gives an empty response), save their entry\n'
-    "- Provide a confirmation message after saving\n\n"
+    '"finish", or gives an empty response), collect all their responses and '
+    "use the save_journal_entry tool to save their complete reflection\n"
+    "- Provide a confirmation message after the tool completes\n\n"
+    "Tool Usage:\n"
+    "- Use save_journal_entry when the conversation is complete\n"
+    "- Pass the full conversation content (initial response + all follow-ups)\n"
+    "- The tool automatically handles word counting, summarization, and file operations\n"
+    "- Long entries (>150 words) will automatically include AI-generated summaries\n\n"
     "Question Guidelines:\n"
     "- Ask open-ended questions that encourage reflection\n"
     "- Focus on emotions, priorities, challenges, and learnings\n"

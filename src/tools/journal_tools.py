@@ -594,3 +594,93 @@ def generate_formatted_summary(text: str, max_summary_ratio: float = 0.2) -> str
     formatted_summary = format_summary_section(summary)
 
     return formatted_summary
+
+
+def save_journal_entry_with_summary(
+    conversation_summary: str,
+    target_date: Optional[date] = None,
+    target_time: Optional[time] = None,
+    word_limit: int = 150,
+    summary_ratio: float = 0.2,
+) -> str:
+    """
+    Saves a journal entry with automatic summarization for long entries.
+
+    This is the main integration function that combines the conversation flow
+    with file operations and intelligent summarization. It processes the complete
+    conversation, saves it to the daily journal file, and adds a summary if
+    the entry exceeds the word limit.
+
+    Args:
+        conversation_summary: The complete conversation/journal entry text
+        target_date: The date for the journal entry (default: today)
+        target_time: The time for the timestamp (default: current time)
+        word_limit: Word count threshold for triggering summarization (default: 150)
+        summary_ratio: Maximum ratio of summary to original text (default: 0.2)
+
+    Returns:
+        str: Success message with file path and summary information
+
+    Raises:
+        ValueError: If conversation_summary is empty
+        OSError: If file operations fail or AI summarization fails
+    """
+    from datetime import datetime
+
+    if not conversation_summary or not conversation_summary.strip():
+        raise ValueError("Cannot save empty journal entry")
+
+    # Use current date/time if not specified
+    if target_date is None:
+        target_date = date.today()
+    if target_time is None:
+        target_time = datetime.now().time()
+
+    # Prepare the entry content
+    entry_content = conversation_summary.strip()
+
+    # Check if summarization is needed
+    needs_summary = exceeds_word_limit(entry_content, word_limit)
+    word_count = count_words(entry_content)
+
+    if needs_summary:
+        try:
+            # Generate and format the summary
+            formatted_summary = generate_formatted_summary(entry_content, summary_ratio)
+
+            # Append summary to the entry
+            entry_content_with_summary = f"{entry_content}\n\n{formatted_summary}"
+
+            # Save the entry with summary
+            file_path = add_timestamp_entry(
+                entry_content_with_summary, target_date, target_time
+            )
+
+            return (
+                f"Journal entry saved to {file_path}. "
+                f"Entry was {word_count} words, so a summary was automatically added. 📝✨"
+            )
+
+        except Exception as e:
+            # If summarization fails, save without summary but log the issue
+            import warnings
+
+            warnings.warn(
+                f"Failed to generate summary: {e}. Saving entry without summary."
+            )
+
+            file_path = add_timestamp_entry(entry_content, target_date, target_time)
+
+            return (
+                f"Journal entry saved to {file_path}. "
+                f"Entry was {word_count} words but summary generation failed. "
+                f"Entry saved without summary. 📝⚠️"
+            )
+    else:
+        # Save entry without summary
+        file_path = add_timestamp_entry(entry_content, target_date, target_time)
+
+        return (
+            f"Journal entry saved to {file_path}. "
+            f"Entry was {word_count} words (under {word_limit} word limit). 📝"
+        )
