@@ -2,7 +2,7 @@
 
 ## Relevant Files
 
-- `src/agents/journaling_agent.py` - Main journaling agent implementation with LangGraph integration
+- `src/agents/journaling_agent.py` - Main journaling agent implementation with LangGraph integration (✓ Created with conversation state management, LangGraph agent setup, and guided prompting framework)
 - `src/agents/journaling_agent.test.py` - Unit tests for the journaling agent
 - `src/tools/journal_tools.py` - Core journaling tools for file operations, search, and content processing (✓ Created with directory management, daily file creation, title formatting, timestamped entry, file appending, and enhanced error handling for permissions/disk space)
 - `src/tools/test_journal_tools.py` - Unit tests for journal tools (✓ Created with comprehensive test coverage, 39 tests passing)
@@ -28,7 +28,7 @@
   - [x] 1.7 Write unit tests for all file management functions
 
 - [ ] 2.0 Implement guided prompting and conversation flow
-  - [ ] 2.1 Create main conversation state management using LangGraph
+  - [x] 2.1 Create main conversation state management using LangGraph
   - [ ] 2.2 Implement `generate_guiding_questions()` function with CBT-style prompts
   - [ ] 2.3 Implement question flow logic (ask up to 2 questions, then process responses)
   - [ ] 2.4 Add completion signal detection ("I'm Done", empty responses)
