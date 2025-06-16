@@ -517,88 +517,159 @@ def generate_summary(text: str, max_summary_ratio: Optional[float] = None) -> st
         )
 
     # Calculate target summary length
-    max_summary_words = max(10, int(word_count * max_summary_ratio))
+    target_words = max(1, int(word_count * max_summary_ratio))
 
-    # Create the summarization prompt
-    prompt = f"""You are helping to summarize a personal journal entry. Create a concise summary that:
+    try:
+        # Import AI model functionality
+        from core import get_model
 
-1. Captures the main themes, emotions, and key events
-2. Preserves the personal tone and important insights
-3. Is no more than {max_summary_words} words
-4. Focuses on what matters most to the writer
+        # Get the configured model
+        model = get_model()
+
+        # Create the summarization prompt
+        prompt = f"""Please create a concise summary of the following journal entry. The summary should:
+- Be approximately {target_words} words or less
+- Capture the main themes, emotions, and key events
+- Maintain the personal tone and perspective of the original
+- Focus on the most important insights and experiences
 
 Journal Entry:
 {text}
 
-Please provide a thoughtful summary that the writer would find valuable for future reflection."""
+Summary:"""
 
-    try:
-        from langchain_core.messages import HumanMessage
-        from core.llm import get_model
+        try:
+            # Generate summary with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = model.invoke(prompt)
+                    summary = (
+                        response.content.strip()
+                        if hasattr(response, "content")
+                        else str(response).strip()
+                    )
 
-        # Get the default model and create the message
-        model = get_model(settings.DEFAULT_MODEL)
+                    # Validate summary quality
+                    if (
+                        summary and len(summary) > 10
+                    ):  # Minimum reasonable summary length
+                        # Additional validation to ensure it's actually a summary
+                        if (
+                            not summary.lower().startswith("i cannot")
+                            and "unable to" not in summary.lower()
+                        ):
+                            return summary
 
-        # Disable streaming for synchronous summary generation
-        model.streaming = False
+                    if attempt == max_retries - 1:
+                        raise OSError("AI model produced invalid summary response")
 
-        # Generate the summary
-        response = model.invoke([HumanMessage(content=prompt)])
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise OSError(
+                            f"AI model failed after {max_retries} attempts: {e}"
+                        )
+                    continue
 
-        summary = response.content.strip()
-
-        # Validate the summary isn't empty
-        if not summary:
-            raise OSError("AI model returned empty summary")
-
-        # Validate summary length meets the ratio requirement
-        if not validate_summary_length(text, summary, max_summary_ratio):
-            summary_word_count = count_words(summary)
-            max_allowed_words = int(word_count * max_summary_ratio)
-
-            # Log a warning but don't fail - AI models sometimes exceed guidelines
-            import warnings
-
-            warnings.warn(
-                f"Generated summary ({summary_word_count} words) exceeds target "
-                f"length ({max_allowed_words} words) for {word_count}-word entry."
+        except ImportError:
+            raise OSError(
+                "AI model is not available - core.get_model() cannot be imported"
             )
+        except AttributeError as e:
+            raise OSError(f"AI model configuration error: {e}")
+        except Exception as e:
+            raise OSError(f"AI model invocation failed: {e}")
 
-        return summary
-
+    except OSError:
+        raise  # Re-raise OSError as-is
     except Exception as e:
-        # Re-raise with more context
-        if "API" in str(e) or "model" in str(e).lower():
-            raise OSError(f"Failed to generate summary due to AI model error: {e}")
-        else:
-            raise OSError(f"Unexpected error during summary generation: {e}")
+        raise OSError(f"Unexpected error during summarization: {e}")
 
 
 def generate_formatted_summary(text: str, max_summary_ratio: float = 0.2) -> str:
     """
-    Generates and formats a complete summary section for journal entries.
+    Generate a formatted summary section for a journal entry with enhanced error handling.
 
-    Combines summary generation and formatting into a single function that
-    produces a ready-to-use summary section with proper Markdown heading.
+    Combines summary generation and formatting with graceful fallbacks.
 
     Args:
         text: The journal entry text to summarize
-        max_summary_ratio: Maximum ratio of summary to original text (default: 0.2)
+        max_summary_ratio: Maximum ratio of summary to original text length
 
     Returns:
-        str: Complete formatted summary section with heading
+        str: A formatted summary section with Markdown heading
 
     Raises:
-        ValueError: If the text is empty or too short to meaningfully summarize
-        OSError: If the AI model is unavailable or API calls fail
+        ValueError: If text is empty or too short to summarize
+        OSError: If summary generation fails and no fallback is possible
     """
-    # Generate the summary
-    summary = generate_summary(text, max_summary_ratio)
+    try:
+        # Generate the summary
+        summary_text = generate_summary(text, max_summary_ratio)
 
-    # Format it with proper heading
-    formatted_summary = format_summary_section(summary)
+        # Validate and format the summary
+        if validate_summary_length(text, summary_text, max_summary_ratio):
+            return format_summary_section(summary_text)
+        else:
+            # Summary too long, try to truncate gracefully
+            word_limit = int(count_words(text) * max_summary_ratio)
+            words = summary_text.split()
+            if len(words) > word_limit:
+                truncated_summary = " ".join(words[:word_limit]) + "..."
+                return format_summary_section(truncated_summary)
+            else:
+                return format_summary_section(summary_text)
 
-    return formatted_summary
+    except ValueError:
+        raise  # Re-raise validation errors
+    except OSError as e:
+        # Try to create a simple fallback summary
+        try:
+            return _create_fallback_summary(text, max_summary_ratio)
+        except Exception:
+            raise OSError(f"Summary generation failed and fallback unavailable: {e}")
+
+
+def _create_fallback_summary(text: str, max_summary_ratio: float = 0.2) -> str:
+    """
+    Create a simple fallback summary when AI summarization fails.
+
+    This creates a basic summary using text processing techniques.
+
+    Args:
+        text: The text to summarize
+        max_summary_ratio: Maximum ratio of summary to original text
+
+    Returns:
+        str: A formatted fallback summary section
+    """
+    # Calculate target length
+    target_words = max(10, int(count_words(text) * max_summary_ratio))
+
+    # Simple extractive summarization: take first and last sentences
+    sentences = text.replace("\n", " ").split(".")
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    if len(sentences) <= 2:
+        # Short text, just truncate
+        words = text.split()
+        if len(words) > target_words:
+            fallback_text = " ".join(words[:target_words]) + "..."
+        else:
+            fallback_text = text
+    else:
+        # Take first and last meaningful sentences
+        first_sentence = sentences[0] + "."
+        last_sentence = sentences[-1] + "."
+        fallback_text = f"{first_sentence} ... {last_sentence}"
+
+        # Truncate if still too long
+        words = fallback_text.split()
+        if len(words) > target_words:
+            fallback_text = " ".join(words[:target_words]) + "..."
+
+    fallback_summary = f"[Auto-generated summary] {fallback_text}"
+    return format_summary_section(fallback_summary)
 
 
 def save_journal_entry_with_summary(
@@ -1094,7 +1165,7 @@ def search_by_keywords(
         search_frontmatter: Whether to search in frontmatter fields (default: True)
         journal_dir: Optional custom journal directory path
 
-            Returns:
+    Returns:
         List[Dict[str, Any]]: List of matching journal entries with
             metadata
 

@@ -32,14 +32,31 @@ def create_daily_file(target_date: Optional[str] = None) -> str:
     """
     from datetime import datetime
 
-    if target_date:
-        try:
-            parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-            return _create_daily_file(parsed_date)
-        except ValueError:
-            return f"Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format."
+    try:
+        if target_date:
+            try:
+                parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+                file_path = _create_daily_file(parsed_date)
+                return f"✅ Daily journal file created: {file_path}"
+            except ValueError:
+                return f"❌ Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+        else:
+            file_path = _create_daily_file()
+            return f"✅ Today's journal file created: {file_path}"
 
-    return _create_daily_file()
+    except PermissionError as e:
+        return f"❌ Permission denied: {e}. Please check file system permissions for the journal directory."
+    except OSError as e:
+        if "space" in str(e).lower():
+            return f"❌ Insufficient disk space: {e}. Please free up some disk space and try again."
+        elif "read-only" in str(e).lower():
+            return f"❌ File system is read-only: {e}. Cannot create journal files."
+        else:
+            return (
+                f"❌ File system error: {e}. Please check your storage configuration."
+            )
+    except Exception as e:
+        return f"❌ Unexpected error creating daily file: {e}. Please try again or contact support."
 
 
 @tool
@@ -57,16 +74,31 @@ def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
     from datetime import datetime
 
     if not content or not content.strip():
-        return "Error: Cannot add empty journal entry."
+        return "❌ Error: Cannot add empty journal entry. Please provide some content to write about."
 
-    if target_date:
-        try:
-            parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-            return _add_timestamp_entry(content.strip(), parsed_date)
-        except ValueError:
-            return f"Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format."
+    try:
+        if target_date:
+            try:
+                parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+                file_path = _add_timestamp_entry(content.strip(), parsed_date)
+                return f"✅ Journal entry added to {file_path} with timestamp."
+            except ValueError:
+                return f"❌ Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+        else:
+            file_path = _add_timestamp_entry(content.strip())
+            return f"✅ Journal entry added to today's file: {file_path}"
 
-    return _add_timestamp_entry(content.strip())
+    except PermissionError as e:
+        return f"❌ Permission denied: {e}. Unable to write to journal file. Please check file permissions."
+    except OSError as e:
+        if "space" in str(e).lower():
+            return f"❌ Insufficient disk space: {e}. Your entry has been saved, but storage is running low."
+        elif "read-only" in str(e).lower():
+            return f"❌ File system is read-only: {e}. Cannot save journal entries."
+        else:
+            return f"❌ File system error: {e}. Entry may not have been saved properly."
+    except Exception as e:
+        return f"❌ Unexpected error adding entry: {e}. Please try again."
 
 
 @tool
@@ -87,18 +119,47 @@ def save_journal_entry_with_summary(
     from datetime import datetime
 
     if not content or not content.strip():
-        return "Error: Cannot save empty journal entry."
+        return "❌ Error: Cannot save empty journal entry. Please write something to journal about."
 
-    custom_date = None
-    if target_date:
+    try:
+        custom_date = None
+        if target_date:
+            try:
+                custom_date = datetime.strptime(target_date, "%Y-%m-%d")
+            except ValueError:
+                return f"❌ Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+
+        result = _save_journal_entry_with_summary(
+            content.strip(), custom_date=custom_date, force_summary=force_summary
+        )
+        return f"✅ {result}"
+
+    except PermissionError as e:
+        return f"❌ Permission denied: {e}. Unable to save journal entry. Please check file permissions."
+    except OSError as e:
+        if "space" in str(e).lower():
+            # Try to save without summary as fallback
+            try:
+                file_path = _add_timestamp_entry(content.strip())
+                return f"⚠️ Entry saved to {file_path} but summary failed due to low disk space. Consider freeing up storage."
+            except:
+                return f"❌ Critical: Insufficient disk space and unable to save entry: {e}"
+        elif "read-only" in str(e).lower():
+            return f"❌ File system is read-only: {e}. Cannot save journal entries."
+        else:
+            # Try basic save as fallback
+            try:
+                file_path = _add_timestamp_entry(content.strip())
+                return f"⚠️ Entry saved to {file_path} but with errors: {e}"
+            except:
+                return f"❌ File system error prevented saving: {e}"
+    except Exception as e:
+        # Try basic save as last resort fallback
         try:
-            custom_date = datetime.strptime(target_date, "%Y-%m-%d")
-        except ValueError:
-            return f"Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format."
-
-    return _save_journal_entry_with_summary(
-        content.strip(), custom_date=custom_date, force_summary=force_summary
-    )
+            file_path = _add_timestamp_entry(content.strip())
+            return f"⚠️ Entry saved to {file_path} but summary generation failed: {e}"
+        except:
+            return f"❌ Failed to save journal entry: {e}. Please try again or use a simpler format."
 
 
 @tool
@@ -127,23 +188,36 @@ def search_by_date_range(
             elif end_date:
                 date_info = f" up to {end_date}"
 
-            return f"No journal entries found{date_info}."
+            return f"📝 No journal entries found{date_info}. Try a different date range or create a new entry!"
 
         # Format results
-        result_lines = [f"Found {len(results)} journal entries:"]
+        result_lines = [f"📅 Found {len(results)} journal entries:"]
         for entry in results:
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} ({entry['word_count']} words)"
+            word_info = (
+                f"({entry['word_count']} words)" if entry.get("word_count") else ""
             )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']} {word_info}")
             if entry.get("mood"):
-                result_lines.append(f"  Mood: {entry['mood']}")
+                result_lines.append(f"  💭 Mood: {entry['mood']}")
             if entry.get("topics"):
-                result_lines.append(f"  Topics: {', '.join(entry['topics'])}")
+                result_lines.append(f"  🏷️ Topics: {', '.join(entry['topics'])}")
 
         return "\n".join(result_lines)
 
+    except ValueError as e:
+        if "date" in str(e).lower():
+            return f"❌ Invalid date format: {e}. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+        else:
+            return f"❌ Invalid input: {e}"
+    except OSError as e:
+        if "permission" in str(e).lower() or "access" in str(e).lower():
+            return (
+                f"❌ Cannot access journal files: {e}. Please check file permissions."
+            )
+        else:
+            return f"❌ File system error during search: {e}. Please try again."
     except Exception as e:
-        return f"Error searching by date range: {str(e)}"
+        return f"❌ Unexpected error during date search: {e}. Please try again or contact support."
 
 
 @tool
@@ -165,6 +239,9 @@ def search_by_keywords(
     Returns:
         str: Formatted search results with relevance scores.
     """
+    if not keywords or not keywords.strip():
+        return "❌ Error: Please provide keywords to search for."
+
     try:
         keyword_list = keywords.strip().split()
         results = _search_by_keywords(
@@ -175,22 +252,38 @@ def search_by_keywords(
         )
 
         if not results:
-            return f"No journal entries found containing keywords: {keywords}"
+            search_scope = []
+            if search_content:
+                search_scope.append("content")
+            if search_frontmatter:
+                search_scope.append("metadata")
+            scope_text = " and ".join(search_scope) if search_scope else "files"
+
+            return f"🔍 No journal entries found containing keywords: '{keywords}' in {scope_text}. Try different keywords or check spelling."
 
         # Format results with scores
-        result_lines = [f"Found {len(results)} entries matching '{keywords}':"]
+        result_lines = [f"🔍 Found {len(results)} entries matching '{keywords}':"]
         for entry in results:
             score = entry.get("match_score", 0)
             result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (score: {score})"
+                f"• {entry['date']} - {entry['file_path']} (relevance: {score})"
             )
             if entry.get("mood"):
-                result_lines.append(f"  Mood: {entry['mood']}")
+                result_lines.append(f"  💭 Mood: {entry['mood']}")
+            if entry.get("topics"):
+                result_lines.append(f"  🏷️ Topics: {', '.join(entry['topics'])}")
 
         return "\n".join(result_lines)
 
+    except OSError as e:
+        if "permission" in str(e).lower() or "access" in str(e).lower():
+            return (
+                f"❌ Cannot access journal files: {e}. Please check file permissions."
+            )
+        else:
+            return f"❌ File system error during keyword search: {e}. Please try again."
     except Exception as e:
-        return f"Error searching by keywords: {str(e)}"
+        return f"❌ Unexpected error during keyword search: {e}. Please try again."
 
 
 @tool
@@ -199,32 +292,45 @@ def search_by_mood(mood: str, exact_match: bool = False) -> str:
     Search for journal entries by mood.
 
     Args:
-        mood: The mood to search for.
-        exact_match: Whether to require exact mood match or allow partial matches.
+        mood: The mood to search for (e.g., 'happy', 'sad', 'excited').
+        exact_match: Whether to match the mood exactly or partially.
 
     Returns:
         str: Formatted search results.
     """
+    if not mood or not mood.strip():
+        return "❌ Error: Please specify a mood to search for (e.g., 'happy', 'sad', 'excited')."
+
     try:
-        results = _search_by_mood(mood, exact_match=exact_match)
+        results = _search_by_mood(mood.strip(), exact_match=exact_match)
 
         if not results:
             match_type = "exactly" if exact_match else "containing"
-            return f"No journal entries found with mood {match_type} '{mood}'."
+            return f"😐 No journal entries found with mood {match_type} '{mood}'. Try a different mood or use partial matching."
 
         # Format results
-        result_lines = [f"Found {len(results)} entries with mood '{mood}':"]
+        match_type = "exact" if exact_match else "partial"
+        result_lines = [
+            f"😊 Found {len(results)} entries with {match_type} mood match for '{mood}':"
+        ]
         for entry in results:
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (mood: {entry['mood']})"
-            )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']}")
+            if entry.get("mood"):
+                result_lines.append(f"  💭 Mood: {entry['mood']}")
             if entry.get("topics"):
-                result_lines.append(f"  Topics: {', '.join(entry['topics'])}")
+                result_lines.append(f"  🏷️ Topics: {', '.join(entry['topics'])}")
 
         return "\n".join(result_lines)
 
+    except OSError as e:
+        if "permission" in str(e).lower() or "access" in str(e).lower():
+            return (
+                f"❌ Cannot access journal files: {e}. Please check file permissions."
+            )
+        else:
+            return f"❌ File system error during mood search: {e}. Please try again."
     except Exception as e:
-        return f"Error searching by mood: {str(e)}"
+        return f"❌ Unexpected error during mood search: {e}. Please try again."
 
 
 @tool
