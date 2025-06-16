@@ -428,3 +428,79 @@ def exceeds_word_limit(text: str, word_limit: int = 150) -> bool:
     """
     word_count = count_words(text)
     return word_count > word_limit
+
+
+def generate_summary(text: str, max_summary_ratio: float = 0.2) -> str:
+    """
+    Generates an AI-powered summary of a journal entry.
+
+    Uses the default LLM model to create a concise summary that captures the
+    key themes, emotions, and insights from the original text. The summary
+    is designed to be significantly shorter than the original while preserving
+    the essential meaning and tone.
+
+    Args:
+        text: The journal entry text to summarize
+        max_summary_ratio: Maximum ratio of summary length to original text (default: 0.2)
+
+    Returns:
+        str: A concise summary of the journal entry
+
+    Raises:
+        ValueError: If the text is empty or too short to meaningfully summarize
+        OSError: If the AI model is unavailable or API calls fail
+    """
+    from langchain_core.messages import HumanMessage
+    from core.llm import get_model
+    from core.settings import settings
+
+    # Validate input
+    if not text or not text.strip():
+        raise ValueError("Cannot summarize empty text")
+
+    word_count = count_words(text)
+    if word_count < 20:
+        raise ValueError(
+            "Text is too short to meaningfully summarize (minimum 20 words)"
+        )
+
+    # Calculate target summary length
+    max_summary_words = max(10, int(word_count * max_summary_ratio))
+
+    # Create the summarization prompt
+    prompt = f"""You are helping to summarize a personal journal entry. Create a concise summary that:
+
+1. Captures the main themes, emotions, and key events
+2. Preserves the personal tone and important insights
+3. Is no more than {max_summary_words} words
+4. Focuses on what matters most to the writer
+
+Journal Entry:
+{text}
+
+Please provide a thoughtful summary that the writer would find valuable for future reflection."""
+
+    try:
+        # Get the default model and create the message
+        model = get_model(settings.DEFAULT_MODEL)
+
+        # Disable streaming for synchronous summary generation
+        model.streaming = False
+
+        # Generate the summary
+        response = model.invoke([HumanMessage(content=prompt)])
+
+        summary = response.content.strip()
+
+        # Validate the summary isn't empty
+        if not summary:
+            raise OSError("AI model returned empty summary")
+
+        return summary
+
+    except Exception as e:
+        # Re-raise with more context
+        if "API" in str(e) or "model" in str(e).lower():
+            raise OSError(f"Failed to generate summary due to AI model error: {e}")
+        else:
+            raise OSError(f"Unexpected error during summary generation: {e}")

@@ -1,7 +1,7 @@
 import tempfile
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 import pytest
 import sys
 
@@ -19,6 +19,7 @@ from tools.journal_tools import (
     check_directory_permissions,
     count_words,
     exceeds_word_limit,
+    generate_summary,
 )
 
 
@@ -848,3 +849,107 @@ class TestWordCounting:
             assert (
                 exceeds == should_exceed
             ), f"Exceed check failed for {word_count} words"
+
+
+class TestSummarization:
+    """Test cases for AI-powered summarization functions."""
+
+    def test_generate_summary_empty_input(self):
+        """Test that generate_summary raises ValueError for empty input."""
+        test_cases = ["", "   ", "\t\n\r"]
+
+        for empty_text in test_cases:
+            with pytest.raises(ValueError, match="Cannot summarize empty text"):
+                generate_summary(empty_text)
+
+        # Test None separately
+        with pytest.raises(ValueError, match="Cannot summarize empty text"):
+            generate_summary(None)
+
+    def test_generate_summary_too_short_input(self):
+        """Test that generate_summary raises ValueError for very short input."""
+        short_texts = [
+            "Short.",
+            "Too short",
+            "This is only five words",
+            "Just a few words here",
+        ]
+
+        for short_text in short_texts:
+            word_count = count_words(short_text)
+            if word_count < 20:
+                with pytest.raises(
+                    ValueError, match="Text is too short to meaningfully summarize"
+                ):
+                    generate_summary(short_text)
+
+    @patch("langchain_aws.ChatBedrock")  # Mock the problematic import
+    @patch("core.llm.get_model")
+    def test_generate_summary_basic_functionality(self, mock_get_model, mock_bedrock):
+        """Test that generate_summary works with valid input."""
+        long_entry = """Today was a complex day filled with both challenges and victories.
+        I started the morning feeling anxious about the big presentation I had to give at work.
+        The preparation took longer than expected, and I found myself rushing to get everything
+        ready. However, when it came time to present, everything went smoothly. My colleagues
+        asked thoughtful questions and seemed genuinely interested in the project. After the
+        presentation, I felt a huge sense of relief and accomplishment. The rest of the day
+        was spent catching up on emails and planning for next week. I'm grateful for how
+        things turned out and proud of how I handled the pressure."""
+
+        # Mock the model and its response
+        mock_model = Mock()
+        mock_response = Mock()
+        mock_response.content = "Had anxiety about work presentation but it went well. Felt relief and accomplishment afterward."
+        mock_model.invoke.return_value = mock_response
+        mock_get_model.return_value = mock_model
+
+        result = generate_summary(long_entry)
+
+        # Verify the function was called and returned a summary
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert len(result) < len(long_entry)
+        mock_model.invoke.assert_called_once()
+
+    @patch("langchain_aws.ChatBedrock")
+    @patch("core.llm.get_model")
+    def test_generate_summary_custom_ratio(self, mock_get_model, mock_bedrock):
+        """Test generate_summary with custom summary ratio."""
+        test_entry = " ".join([f"word{i}" for i in range(100)])
+
+        mock_model = Mock()
+        mock_response = Mock()
+        mock_response.content = "This is a test summary."
+        mock_model.invoke.return_value = mock_response
+        mock_get_model.return_value = mock_model
+
+        result = generate_summary(test_entry, max_summary_ratio=0.1)
+
+        # Verify the prompt includes the correct word count target
+        call_args = mock_model.invoke.call_args[0][0][0].content
+        assert "10 words" in call_args
+
+    @patch("langchain_aws.ChatBedrock")
+    @patch("core.llm.get_model")
+    def test_generate_summary_model_error_handling(self, mock_get_model, mock_bedrock):
+        """Test that generate_summary handles model errors appropriately."""
+        test_entry = "This is a sufficiently long entry with more than twenty words to test error handling when the model fails to respond properly."
+
+        # Test API error
+        mock_model = Mock()
+        mock_model.invoke.side_effect = Exception("API rate limit exceeded")
+        mock_get_model.return_value = mock_model
+
+        with pytest.raises(
+            OSError, match="Failed to generate summary due to AI model error"
+        ):
+            generate_summary(test_entry)
+
+        # Test empty response
+        mock_model.invoke.side_effect = None
+        mock_response = Mock()
+        mock_response.content = ""  # Empty response
+        mock_model.invoke.return_value = mock_response
+
+        with pytest.raises(OSError, match="AI model returned empty summary"):
+            generate_summary(test_entry)
