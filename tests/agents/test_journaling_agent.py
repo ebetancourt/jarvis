@@ -65,9 +65,9 @@ class TestJournalingAgentStructure:
 
     def test_agent_exports_agent_instance(self):
         """Test that the agent exports a journaling_agent instance."""
-        assert hasattr(
-            journaling_agent, "journaling_agent"
-        ), "Should export journaling_agent instance"
+        assert hasattr(journaling_agent, "journaling_agent"), (
+            "Should export journaling_agent instance"
+        )
         agent = journaling_agent.journaling_agent
         assert agent is not None, "Agent instance should not be None"
 
@@ -87,9 +87,7 @@ class TestJournalingAgentStructure:
         ]
 
         for tool_name in expected_tools:
-            assert hasattr(
-                journaling_agent, tool_name
-            ), f"Missing tool function: {tool_name}"
+            assert hasattr(journaling_agent, tool_name), f"Missing tool function: {tool_name}"
             tool_func = getattr(journaling_agent, tool_name)
             assert callable(tool_func), f"Tool {tool_name} should be callable"
 
@@ -101,9 +99,9 @@ class TestJournalingAgentStructure:
         for tool_name in key_tools:
             tool_func = getattr(journaling_agent, tool_name)
             # Check if it has tool attributes (added by @tool decorator)
-            assert hasattr(tool_func, "name") or hasattr(
-                tool_func, "func"
-            ), f"Tool {tool_name} should have @tool decorator"
+            assert hasattr(tool_func, "name") or hasattr(tool_func, "func"), (
+                f"Tool {tool_name} should have @tool decorator"
+            )
 
 
 class TestJournalingAgentTools:
@@ -215,14 +213,12 @@ class TestJournalingAgentIntegration:
             result = tool_func(*test_args)
 
             # Should use emoji indicators for errors
-            assert any(
-                emoji in result for emoji in ["❌", "⚠️"]
-            ), f"Tool {tool_name} should use error emoji indicators"
+            assert any(emoji in result for emoji in ["❌", "⚠️"]), (
+                f"Tool {tool_name} should use error emoji indicators"
+            )
 
             # Should provide user-friendly error messages
-            assert (
-                len(result) > 10
-            ), f"Tool {tool_name} should provide descriptive error messages"
+            assert len(result) > 10, f"Tool {tool_name} should provide descriptive error messages"
 
 
 class TestJournalingAgentValidation:
@@ -231,9 +227,7 @@ class TestJournalingAgentValidation:
     def test_tools_list_contains_all_functions(self):
         """Test that the tools list contains all expected tool functions."""
         tools = journaling_agent.tools
-        tool_names = [
-            tool.name if hasattr(tool, "name") else str(tool) for tool in tools
-        ]
+        tool_names = [tool.name if hasattr(tool, "name") else str(tool) for tool in tools]
 
         expected_tools = [
             "create_daily_file",
@@ -250,9 +244,7 @@ class TestJournalingAgentValidation:
 
         for expected_tool in expected_tools:
             # Check if tool name appears in the tools list (may have different formats)
-            tool_present = any(
-                expected_tool in str(tool_name) for tool_name in tool_names
-            )
+            tool_present = any(expected_tool in str(tool_name) for tool_name in tool_names)
             assert tool_present, f"Tool {expected_tool} should be in tools list"
 
     def test_agent_has_proper_configuration(self):
