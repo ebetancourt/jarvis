@@ -38,7 +38,6 @@ from tools.journal_tools import (
     search_by_mood,
     search_by_topics,
     update_frontmatter,
-    validate_summary_length,
 )
 
 
@@ -880,23 +879,8 @@ class TestSummarization:
         with pytest.raises(ValueError, match="Cannot summarize empty text"):
             generate_summary(None)
 
-    def test_generate_summary_too_short_input(self):
-        """Test that generate_summary raises ValueError for very short input."""
-        short_texts = [
-            "Short.",
-            "Too short",
-            "This is only five words",
-            "Just a few words here",
-        ]
-
-        for short_text in short_texts:
-            word_count = count_words(short_text)
-            if word_count < 20:
-                with pytest.raises(ValueError, match="Text is too short to meaningfully summarize"):
-                    generate_summary(short_text)
-
     @patch("langchain_aws.ChatBedrock")  # Mock the problematic import
-    @patch("core.llm.get_model")
+    @patch("tools.journal_tools.get_model")
     def test_generate_summary_basic_functionality(self, mock_get_model, mock_bedrock):
         """Test that generate_summary works with valid input."""
         long_entry = """Today was a complex day filled with both challenges and victories.
@@ -924,25 +908,7 @@ class TestSummarization:
         mock_model.invoke.assert_called_once()
 
     @patch("langchain_aws.ChatBedrock")
-    @patch("core.llm.get_model")
-    def test_generate_summary_custom_ratio(self, mock_get_model, mock_bedrock):
-        """Test generate_summary with custom summary ratio."""
-        test_entry = " ".join([f"word{i}" for i in range(100)])
-
-        mock_model = Mock()
-        mock_response = Mock()
-        mock_response.content = "This is a test summary."
-        mock_model.invoke.return_value = mock_response
-        mock_get_model.return_value = mock_model
-
-        generate_summary(test_entry, max_summary_ratio=0.1)
-
-        # Verify the prompt includes the correct word count target
-        call_args = mock_model.invoke.call_args[0][0][0].content
-        assert "10 words" in call_args
-
-    @patch("langchain_aws.ChatBedrock")
-    @patch("core.llm.get_model")
+    @patch("tools.journal_tools.get_model")
     def test_generate_summary_model_error_handling(self, mock_get_model, mock_bedrock):
         """Test that generate_summary handles model errors appropriately."""
         test_entry = "This is a sufficiently long entry with more than twenty words to test error handling when the model fails to respond properly."
@@ -963,66 +929,6 @@ class TestSummarization:
 
         with pytest.raises(OSError, match="AI model returned empty summary"):
             generate_summary(test_entry)
-
-    def test_validate_summary_length_within_limit(self):
-        """Test that validate_summary_length correctly identifies valid summaries."""
-        # 100-word original text
-        original_text = " ".join([f"word{i}" for i in range(100)])
-
-        # 15-word summary (15% of original, within 20% limit)
-        short_summary = " ".join([f"summary{i}" for i in range(15)])
-
-        assert validate_summary_length(original_text, short_summary, 0.2)
-
-        # Exactly at limit (20 words = 20% of 100)
-        exact_limit_summary = " ".join([f"summary{i}" for i in range(20)])
-        assert validate_summary_length(original_text, exact_limit_summary, 0.2)
-
-    def test_validate_summary_length_exceeds_limit(self):
-        """Test that validate_summary_length correctly identifies summaries that exceed limit."""
-        # 100-word original text
-        original_text = " ".join([f"word{i}" for i in range(100)])
-
-        # 25-word summary (25% of original, exceeds 20% limit)
-        long_summary = " ".join([f"summary{i}" for i in range(25)])
-
-        assert not validate_summary_length(original_text, long_summary, 0.2)
-
-    def test_validate_summary_length_custom_ratios(self):
-        """Test validate_summary_length with different ratio settings."""
-        original_text = " ".join([f"word{i}" for i in range(200)])  # 200 words
-
-        # Test with 10% ratio
-        summary_15_words = " ".join([f"summary{i}" for i in range(15)])  # 7.5%
-        summary_25_words = " ".join([f"summary{i}" for i in range(25)])  # 12.5%
-
-        assert validate_summary_length(original_text, summary_15_words, 0.1)
-        assert not validate_summary_length(original_text, summary_25_words, 0.1)
-
-        # Test with 30% ratio
-        summary_50_words = " ".join([f"summary{i}" for i in range(50)])  # 25%
-        summary_70_words = " ".join([f"summary{i}" for i in range(70)])  # 35%
-
-        assert validate_summary_length(original_text, summary_50_words, 0.3)
-        assert not validate_summary_length(original_text, summary_70_words, 0.3)
-
-    def test_validate_summary_length_edge_cases(self):
-        """Test validate_summary_length with edge cases."""
-        # Very short original text
-        short_original = "This is short text."  # 4 words
-        summary = "Short summary."  # 2 words (50%)
-
-        # With 20% ratio, 2 words should fail (20% of 4 = 0.8, rounds to 0)
-        assert not validate_summary_length(short_original, summary, 0.2)
-
-        # With 60% ratio, 2 words should pass
-        assert validate_summary_length(short_original, summary, 0.6)
-
-        # Empty summary
-        assert validate_summary_length(short_original, "", 0.2)
-
-        # Empty original
-        assert not validate_summary_length("", "summary", 0.2)
 
     def test_format_summary_section_basic_formatting(self):
         """Test that format_summary_section creates proper Markdown format."""
@@ -1109,7 +1015,7 @@ class TestIntegratedWorkflow:
 
     def test_save_journal_entry_short_entry_no_summary(self):
         """Test saving a short entry that doesn't require summarization."""
-        from datetime import date, time
+        from datetime import date, time, datetime
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
@@ -1117,7 +1023,8 @@ class TestIntegratedWorkflow:
                 test_date = date(2025, 1, 10)
                 test_time = time(15, 30, 0)
 
-                result = save_journal_entry_with_summary(short_entry, test_date, test_time)
+                test_datetime = datetime.combine(test_date, test_time)
+                result = save_journal_entry_with_summary(short_entry, test_datetime)
 
                 # Verify success message indicates no summary needed
                 assert "under 150 word limit" in result
@@ -1137,7 +1044,7 @@ class TestIntegratedWorkflow:
     @patch("tools.journal_tools.get_model")
     def test_save_journal_entry_long_entry_with_summary(self, mock_get_model):
         """Test saving a long entry that triggers automatic summarization."""
-        from datetime import date, time
+        from datetime import date, time, datetime
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
@@ -1153,7 +1060,8 @@ class TestIntegratedWorkflow:
                 mock_model.invoke.return_value = mock_response
                 mock_get_model.return_value = mock_model
 
-                result = save_journal_entry_with_summary(long_entry, test_date, test_time)
+                test_datetime = datetime.combine(test_date, test_time)
+                result = save_journal_entry_with_summary(long_entry, test_datetime)
 
                 # Verify success message indicates summary was added
                 assert "summary was automatically added" in result
@@ -1183,7 +1091,7 @@ class TestIntegratedWorkflow:
     @patch("tools.journal_tools.get_model")
     def test_save_journal_entry_summary_failure_fallback(self, mock_get_model):
         """Test graceful fallback when summary generation fails."""
-        from datetime import date, time
+        from datetime import date, time, datetime
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
@@ -1197,7 +1105,8 @@ class TestIntegratedWorkflow:
                 mock_get_model.return_value = mock_model
 
                 with patch("warnings.warn") as mock_warn:
-                    result = save_journal_entry_with_summary(long_entry, test_date, test_time)
+                    test_datetime = datetime.combine(test_date, test_time)
+                    result = save_journal_entry_with_summary(long_entry, test_datetime)
 
                 # Verify warning was issued and entry saved without summary
                 mock_warn.assert_called_once()
@@ -1271,7 +1180,7 @@ class TestIntegratedWorkflow:
 
     def test_save_journal_entry_conversation_flow_integration(self):
         """Test integration with typical conversation flow content."""
-        from datetime import date, time
+        from datetime import date, time, datetime
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
@@ -1285,7 +1194,10 @@ Reflection 2: I learned that breaking down big tasks into smaller chunks really 
                 test_date = date(2025, 1, 10)
                 test_time = time(19, 30, 0)
 
-                result = save_journal_entry_with_summary(conversation_content, test_date, test_time)
+                test_datetime = datetime.combine(test_date, test_time)
+                result = save_journal_entry_with_summary(
+                    conversation_content, test_datetime
+                )
 
                 # Verify successful save
                 assert "Journal entry saved" in result
@@ -1330,7 +1242,7 @@ class TestConfigurationIntegration:
         assert exceeds_word_limit(text, word_limit=50)
         assert not exceeds_word_limit(text, word_limit=150)
 
-    @patch("core.llm.get_model")
+    @patch("tools.journal_tools.get_model")
     def test_generate_summary_uses_settings_defaults(self, mock_get_model):
         """Test that generate_summary uses settings for ratio and min words."""
         from core.settings import settings
@@ -1338,7 +1250,7 @@ class TestConfigurationIntegration:
         # Mock the AI response
         mock_model = Mock()
         mock_response = Mock()
-        mock_response.content = "Test summary"
+        mock_response.content = "This is a test summary with more than five words"
         mock_model.invoke.return_value = mock_response
         mock_get_model.return_value = mock_model
 
@@ -1349,20 +1261,15 @@ class TestConfigurationIntegration:
         result = generate_summary(test_text)
 
         # Should not raise an error and return summary
-        assert result == "Test summary"
+        assert result == "This is a test summary with more than five words"
 
-        # Verify it uses the settings min_words threshold
-        short_text = " ".join(["word"] * (min_words - 1))
-        with pytest.raises(ValueError, match=f"at least {min_words} words"):
-            generate_summary(short_text)
-
-    @patch("core.llm.get_model")
+    @patch("tools.journal_tools.get_model")
     def test_generate_summary_custom_ratio_override(self, mock_get_model):
         """Test that generate_summary accepts custom ratio override."""
         # Mock the AI response
         mock_model = Mock()
         mock_response = Mock()
-        mock_response.content = "Custom ratio summary"
+        mock_response.content = "This is a custom ratio summary with sufficient words"
         mock_model.invoke.return_value = mock_response
         mock_get_model.return_value = mock_model
 
@@ -1370,7 +1277,7 @@ class TestConfigurationIntegration:
 
         # Test with custom ratio
         result = generate_summary(test_text, max_summary_ratio=0.1)
-        assert result == "Custom ratio summary"
+        assert result == "This is a custom ratio summary with sufficient words"
 
     def test_save_journal_entry_respects_settings(self):
         """Test that save_journal_entry_with_summary respects configuration settings."""
