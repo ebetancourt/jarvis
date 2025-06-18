@@ -39,16 +39,25 @@ def create_daily_file(target_date: Optional[str] = None) -> str:
                 file_path = _create_daily_file(parsed_date)
                 return f"✅ Daily journal file created: {file_path}"
             except ValueError:
-                return f"❌ Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+                return (
+                    f"❌ Error: Invalid date format '{target_date}'. "
+                    "Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+                )
         else:
             file_path = _create_daily_file()
             return f"✅ Today's journal file created: {file_path}"
 
     except PermissionError as e:
-        return f"❌ Permission denied: {e}. Please check file system permissions for the journal directory."
+        return (
+            f"❌ Permission denied: {e}. "
+            "Please check file system permissions for the journal directory."
+        )
     except OSError as e:
         if "space" in str(e).lower():
-            return f"❌ Insufficient disk space: {e}. Please free up some disk space and try again."
+            return (
+                f"❌ Insufficient disk space: {e}. "
+                "Please free up some disk space and try again."
+            )
         elif "read-only" in str(e).lower():
             return f"❌ File system is read-only: {e}. Cannot create journal files."
         else:
@@ -56,7 +65,10 @@ def create_daily_file(target_date: Optional[str] = None) -> str:
                 f"❌ File system error: {e}. Please check your storage configuration."
             )
     except Exception as e:
-        return f"❌ Unexpected error creating daily file: {e}. Please try again or contact support."
+        return (
+            f"❌ Unexpected error creating daily file: {e}. "
+            "Please try again or contact support."
+        )
 
 
 @tool
@@ -74,7 +86,10 @@ def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
     from datetime import datetime
 
     if not content or not content.strip():
-        return "❌ Error: Cannot add empty journal entry. Please provide some content to write about."
+        return (
+            "❌ Error: Cannot add empty journal entry. "
+            "Please provide some content to write about."
+        )
 
     try:
         if target_date:
@@ -83,20 +98,31 @@ def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
                 file_path = _add_timestamp_entry(content.strip(), parsed_date)
                 return f"✅ Journal entry added to {file_path} with timestamp."
             except ValueError:
-                return f"❌ Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+                return (
+                    f"❌ Error: Invalid date format '{target_date}'. "
+                    "Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+                )
         else:
             file_path = _add_timestamp_entry(content.strip())
             return f"✅ Journal entry added to today's file: {file_path}"
 
     except PermissionError as e:
-        return f"❌ Permission denied: {e}. Unable to write to journal file. Please check file permissions."
+        return (
+            f"❌ Permission denied: {e}. "
+            "Unable to write to journal file. Please check file permissions."
+        )
     except OSError as e:
         if "space" in str(e).lower():
-            return f"❌ Insufficient disk space: {e}. Your entry has been saved, but storage is running low."
+            return (
+                f"❌ Insufficient disk space: {e}. "
+                "Your entry has been saved, but storage is running low."
+            )
         elif "read-only" in str(e).lower():
             return f"❌ File system is read-only: {e}. Cannot save journal entries."
         else:
-            return f"❌ File system error: {e}. Entry may not have been saved properly."
+            return (
+                f"❌ File system error: {e}. " "Entry may not have been saved properly."
+            )
     except Exception as e:
         return f"❌ Unexpected error adding entry: {e}. Please try again."
 
@@ -119,7 +145,10 @@ def save_journal_entry_with_summary(
     from datetime import datetime
 
     if not content or not content.strip():
-        return "❌ Error: Cannot save empty journal entry. Please write something to journal about."
+        return (
+            "❌ Error: Cannot save empty journal entry. "
+            "Please write something to journal about."
+        )
 
     try:
         custom_date = None
@@ -127,7 +156,10 @@ def save_journal_entry_with_summary(
             try:
                 custom_date = datetime.strptime(target_date, "%Y-%m-%d")
             except ValueError:
-                return f"❌ Error: Invalid date format '{target_date}'. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+                return (
+                    f"❌ Error: Invalid date format '{target_date}'. "
+                    "Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+                )
 
         result = _save_journal_entry_with_summary(
             content.strip(), custom_date=custom_date, force_summary=force_summary
@@ -135,15 +167,24 @@ def save_journal_entry_with_summary(
         return f"✅ {result}"
 
     except PermissionError as e:
-        return f"❌ Permission denied: {e}. Unable to save journal entry. Please check file permissions."
+        return (
+            f"❌ Permission denied: {e}. "
+            "Unable to save journal entry. Please check file permissions."
+        )
     except OSError as e:
         if "space" in str(e).lower():
             # Try to save without summary as fallback
             try:
                 file_path = _add_timestamp_entry(content.strip())
-                return f"⚠️ Entry saved to {file_path} but summary failed due to low disk space. Consider freeing up storage."
-            except:
-                return f"❌ Critical: Insufficient disk space and unable to save entry: {e}"
+                return (
+                    f"⚠️ Entry saved to {file_path} but summary failed due to "
+                    "low disk space. Consider freeing up storage."
+                )
+            except Exception:
+                return (
+                    "❌ Critical: Insufficient disk space and unable to save "
+                    f"entry: {e}"
+                )
         elif "read-only" in str(e).lower():
             return f"❌ File system is read-only: {e}. Cannot save journal entries."
         else:
@@ -151,15 +192,20 @@ def save_journal_entry_with_summary(
             try:
                 file_path = _add_timestamp_entry(content.strip())
                 return f"⚠️ Entry saved to {file_path} but with errors: {e}"
-            except:
+            except Exception:
                 return f"❌ File system error prevented saving: {e}"
     except Exception as e:
         # Try basic save as last resort fallback
         try:
             file_path = _add_timestamp_entry(content.strip())
-            return f"⚠️ Entry saved to {file_path} but summary generation failed: {e}"
-        except:
-            return f"❌ Failed to save journal entry: {e}. Please try again or use a simpler format."
+            return (
+                f"⚠️ Entry saved to {file_path} but summary generation " f"failed: {e}"
+            )
+        except Exception:
+            return (
+                f"❌ Failed to save journal entry: {e}. "
+                "Please try again or use a simpler format."
+            )
 
 
 @tool
@@ -188,7 +234,10 @@ def search_by_date_range(
             elif end_date:
                 date_info = f" up to {end_date}"
 
-            return f"📝 No journal entries found{date_info}. Try a different date range or create a new entry!"
+            return (
+                f"📝 No journal entries found{date_info}. "
+                "Try a different date range or create a new entry!"
+            )
 
         # Format results
         result_lines = [f"📅 Found {len(results)} journal entries:"]
@@ -206,7 +255,10 @@ def search_by_date_range(
 
     except ValueError as e:
         if "date" in str(e).lower():
-            return f"❌ Invalid date format: {e}. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+            return (
+                f"❌ Invalid date format: {e}. "
+                "Please use YYYY-MM-DD format (e.g., 2024-01-15)."
+            )
         else:
             return f"❌ Invalid input: {e}"
     except OSError as e:
@@ -217,7 +269,10 @@ def search_by_date_range(
         else:
             return f"❌ File system error during search: {e}. Please try again."
     except Exception as e:
-        return f"❌ Unexpected error during date search: {e}. Please try again or contact support."
+        return (
+            f"❌ Unexpected error during date search: {e}. "
+            "Please try again or contact support."
+        )
 
 
 @tool
@@ -259,7 +314,10 @@ def search_by_keywords(
                 search_scope.append("metadata")
             scope_text = " and ".join(search_scope) if search_scope else "files"
 
-            return f"🔍 No journal entries found containing keywords: '{keywords}' in {scope_text}. Try different keywords or check spelling."
+            return (
+                f"🔍 No journal entries found containing keywords: '{keywords}' "
+                f"in {scope_text}. Try different keywords or check spelling."
+            )
 
         # Format results with scores
         result_lines = [f"🔍 Found {len(results)} entries matching '{keywords}':"]
@@ -299,14 +357,20 @@ def search_by_mood(mood: str, exact_match: bool = False) -> str:
         str: Formatted search results.
     """
     if not mood or not mood.strip():
-        return "❌ Error: Please specify a mood to search for (e.g., 'happy', 'sad', 'excited')."
+        return (
+            "❌ Error: Please specify a mood to search for "
+            "(e.g., 'happy', 'sad', 'excited')."
+        )
 
     try:
         results = _search_by_mood(mood.strip(), exact_match=exact_match)
 
         if not results:
             match_type = "exactly" if exact_match else "containing"
-            return f"😐 No journal entries found with mood {match_type} '{mood}'. Try a different mood or use partial matching."
+            return (
+                f"😐 No journal entries found with mood {match_type} '{mood}'. "
+                "Try a different mood or use partial matching."
+            )
 
         # Format results
         match_type = "exact" if exact_match else "partial"
@@ -351,7 +415,10 @@ def search_by_topics(topics: str, match_all: bool = False) -> str:
 
         if not results:
             match_type = "all" if match_all else "any"
-            return f"No journal entries found containing {match_type} of these topics: {topics}"
+            return (
+                f"No journal entries found containing {match_type} "
+                f"of these topics: {topics}"
+            )
 
         # Format results with scores
         result_lines = [f"Found {len(results)} entries matching topics '{topics}':"]
@@ -492,11 +559,14 @@ current_date = datetime.now().strftime("%Y-%m-%d")
 journaling_agent = create_react_agent(
     "anthropic:claude-3-7-sonnet-latest",
     tools=tools,
-    prompt=f"""Today is {current_date}. You are Luna, a thoughtful and empathetic daily journaling assistant designed to help users reflect deeply on their experiences and capture meaningful insights.
+    prompt=f"""Today is {current_date}. You are Luna, a thoughtful and empathetic daily \
+journaling assistant designed to help users reflect deeply on their experiences and capture \
+meaningful insights.
 
 ## 🌟 Your Personality & Approach
 
-You are a warm, supportive companion who feels like talking to a trusted friend who genuinely cares about personal growth. You:
+You are a warm, supportive companion who feels like talking to a trusted friend who genuinely \
+cares about personal growth. You:
 
 - **Listen actively** and respond with genuine curiosity and empathy
 - **Ask thoughtful questions** that help users discover insights they might not have noticed
@@ -507,14 +577,17 @@ You are a warm, supportive companion who feels like talking to a trusted friend 
 ## 📝 Journaling Workflow & Instructions
 
 ### **Session Flow:**
-1. **Welcome & Check-in**: Start each session with a warm greeting and open-ended question about their day
-2. **Active Listening**: Respond to what they share with empathy and follow-up questions (max 2 questions)
+1. **Welcome & Check-in**: Start each session with a warm greeting and open-ended question \
+about their day
+2. **Active Listening**: Respond to what they share with empathy and follow-up questions \
+(max 2 questions)
 3. **Guided Reflection**: Use CBT-style questions to encourage deeper thinking
 4. **Graceful Completion**: Detect completion signals and save their reflections
 5. **Confirmation**: Provide encouraging closure with next steps
 
 ### **Your Conversation Tools:**
-- Use `save_journal_entry_with_summary` when they're done sharing (handles summarization automatically)
+- Use `save_journal_entry_with_summary` when they're done sharing (handles summarization \
+automatically)
 - Use `search_by_*` tools to help them find patterns in past entries
 - Use `add_metadata_to_entry` to tag entries with mood, topics, or keywords
 - Use `create_daily_file` if they want to start fresh for a specific date
@@ -555,7 +628,9 @@ Help users connect current experiences with past insights:
 
 ## 🌱 Remember
 
-You're not just collecting text - you're facilitating self-discovery. Every interaction should leave them feeling heard, understood, and maybe just a little more aware of their own wisdom.
+You're not just collecting text - you're facilitating self-discovery. Every interaction should \
+leave them feeling heard, understood, and maybe just a little more aware of their own wisdom.
 
-When they finish sharing, save their complete reflection and offer genuine encouragement about their commitment to self-reflection.""",
+When they finish sharing, save their complete reflection and offer genuine encouragement about \
+their commitment to self-reflection.""",
 )

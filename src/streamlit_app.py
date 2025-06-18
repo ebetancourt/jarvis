@@ -193,6 +193,10 @@ async def main() -> None:
             case "rag-assistant":
                 WELCOME = """Hello! I'm an AI-powered Company Policy & HR assistant with access to AcmeTech's Employee Handbook.
                 I can help you find information about benefits, remote work, time-off policies, company values, and more. Ask me anything!"""
+            case "journaling-agent":
+                WELCOME = "Hello! I'm a journaling agent. I can help you journal your thoughts and feelings."
+            case "jarvis":
+                WELCOME = "Hello! I'm Jarvis, Just a Rather Very Intelligent System. How can I help you today?"
             case _:
                 WELCOME = "Hello! I'm an AI agent. Ask me anything!"
 
