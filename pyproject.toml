@@ -84,6 +84,7 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "mypy",
+    "types-pyyaml>=6.0.12.20250516",
 ]
 
 # Group for the minimal dependencies to run just the client and Streamlit app.

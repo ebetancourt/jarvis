@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
@@ -433,7 +434,7 @@ def add_metadata_to_entry(
     """
     try:
         # Convert string lists to actual lists
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if mood:
             kwargs["mood"] = mood.strip()
         if keywords:

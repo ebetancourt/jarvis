@@ -516,9 +516,17 @@ Write a summary that captures the essence of this entry:"""
         try:
             # Generate summary with simpler retry logic
             response = model.invoke(prompt)
-            summary = (
-                response.content.strip() if hasattr(response, "content") else str(response).strip()
-            )
+            # Handle response.content which might be str, list, or other types
+            if hasattr(response, "content"):
+                if isinstance(response.content, str):
+                    summary = response.content.strip()
+                elif isinstance(response.content, list):
+                    # Join list content if it's a list of strings
+                    summary = " ".join(str(item) for item in response.content).strip()
+                else:
+                    summary = str(response.content).strip()
+            else:
+                summary = str(response).strip()
 
             # Basic validation - be more lenient
             if summary and len(summary.split()) >= 5:
@@ -942,7 +950,7 @@ def add_metadata_to_entry(
         OSError: If file operations fail
         yaml.YAMLError: If metadata cannot be serialized
     """
-    metadata = {}
+    metadata: dict[str, Any] = {}
 
     if mood is not None:
         metadata["mood"] = mood
