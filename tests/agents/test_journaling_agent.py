@@ -7,10 +7,11 @@ and basic functionality.
 """
 
 import os
+import shutil
 import sys
 import tempfile
-import shutil
 from unittest.mock import patch
+
 import pytest
 
 # Add src to path for imports
