@@ -1,5 +1,5 @@
-import nltk
-from rake_nltk import Rake
+import nltk  # type: ignore
+from rake_nltk import Rake  # type: ignore
 
 nltk.download("stopwords", quiet=True)
 

@@ -40,16 +40,16 @@ def search_notes(query: str, k: int = 5) -> list[SearchResult]:
     )
     results = deduplicate_documents(results)
 
-    # Return a list of dicts for easier formatting
+    # Return a list of SearchResult objects
     return [
-        {
-            "item": doc.metadata.get("item", ""),
-            "bucket": doc.metadata.get("bucket", ""),
-            "source": doc.metadata.get("source", ""),
-            "document": doc,
-            "distance": distance,
-            "metadata": getattr(doc, "metadata", {}),
-            "full_text": get_full_note_text(doc.metadata.get("item", "")),
-        }
+        SearchResult(
+            item=doc.metadata.get("item", ""),
+            bucket=doc.metadata.get("bucket", ""),
+            source=doc.metadata.get("source", ""),
+            document=doc,
+            distance=distance,
+            metadata=getattr(doc, "metadata", {}),
+            full_text=get_full_note_text(doc.metadata.get("item", "")),
+        )
         for doc, distance in results
     ]

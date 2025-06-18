@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -14,7 +16,7 @@ class ChromaDbVectorStore(VectorStore):
         self.persist_directory = persist_directory
         self.embedding_model = embedding_model or "sentence-transformers/all-mpnet-base-v2"
         self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model)
-        self.db = None
+        self.db: Chroma | None = None
 
     def from_documents(self, documents: list, **kwargs):
         """Create a new vector store from documents."""
@@ -83,7 +85,7 @@ class ChromaDbVectorStore(VectorStore):
         """Return top-k (Document, distance) tuples for notes (obsidian only)."""
         # Use the underlying Chroma API for similarity search with scores
         # Filter for obsidian notes only
-        filter = {"deleted": False}
+        filter: dict[str, Any] = {"deleted": False}
         if source:
             filter = {"$and": [{"source": source}, {"deleted": False}]}
         if self.db is None:
