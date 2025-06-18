@@ -363,9 +363,9 @@ class TestJournalDirectoryFunctions:
                 test_content = "Entry with default parameters."
 
                 # Get current date/time for comparison
-                before_call = datetime.now()
+                datetime.now()
                 result_path = add_timestamp_entry(test_content)
-                after_call = datetime.now()
+                datetime.now()
 
                 # Verify file was created
                 assert os.path.exists(result_path)
@@ -935,7 +935,7 @@ class TestSummarization:
         mock_model.invoke.return_value = mock_response
         mock_get_model.return_value = mock_model
 
-        result = generate_summary(test_entry, max_summary_ratio=0.1)
+        generate_summary(test_entry, max_summary_ratio=0.1)
 
         # Verify the prompt includes the correct word count target
         call_args = mock_model.invoke.call_args[0][0][0].content
@@ -972,11 +972,11 @@ class TestSummarization:
         # 15-word summary (15% of original, within 20% limit)
         short_summary = " ".join([f"summary{i}" for i in range(15)])
 
-        assert validate_summary_length(original_text, short_summary, 0.2) == True
+        assert validate_summary_length(original_text, short_summary, 0.2)
 
         # Exactly at limit (20 words = 20% of 100)
         exact_limit_summary = " ".join([f"summary{i}" for i in range(20)])
-        assert validate_summary_length(original_text, exact_limit_summary, 0.2) == True
+        assert validate_summary_length(original_text, exact_limit_summary, 0.2)
 
     def test_validate_summary_length_exceeds_limit(self):
         """Test that validate_summary_length correctly identifies summaries that exceed limit."""
@@ -986,7 +986,7 @@ class TestSummarization:
         # 25-word summary (25% of original, exceeds 20% limit)
         long_summary = " ".join([f"summary{i}" for i in range(25)])
 
-        assert validate_summary_length(original_text, long_summary, 0.2) == False
+        assert not validate_summary_length(original_text, long_summary, 0.2)
 
     def test_validate_summary_length_custom_ratios(self):
         """Test validate_summary_length with different ratio settings."""
@@ -996,15 +996,15 @@ class TestSummarization:
         summary_15_words = " ".join([f"summary{i}" for i in range(15)])  # 7.5%
         summary_25_words = " ".join([f"summary{i}" for i in range(25)])  # 12.5%
 
-        assert validate_summary_length(original_text, summary_15_words, 0.1) == True
-        assert validate_summary_length(original_text, summary_25_words, 0.1) == False
+        assert validate_summary_length(original_text, summary_15_words, 0.1)
+        assert not validate_summary_length(original_text, summary_25_words, 0.1)
 
         # Test with 30% ratio
         summary_50_words = " ".join([f"summary{i}" for i in range(50)])  # 25%
         summary_70_words = " ".join([f"summary{i}" for i in range(70)])  # 35%
 
-        assert validate_summary_length(original_text, summary_50_words, 0.3) == True
-        assert validate_summary_length(original_text, summary_70_words, 0.3) == False
+        assert validate_summary_length(original_text, summary_50_words, 0.3)
+        assert not validate_summary_length(original_text, summary_70_words, 0.3)
 
     def test_validate_summary_length_edge_cases(self):
         """Test validate_summary_length with edge cases."""
@@ -1013,16 +1013,16 @@ class TestSummarization:
         summary = "Short summary."  # 2 words (50%)
 
         # With 20% ratio, 2 words should fail (20% of 4 = 0.8, rounds to 0)
-        assert validate_summary_length(short_original, summary, 0.2) == False
+        assert not validate_summary_length(short_original, summary, 0.2)
 
         # With 60% ratio, 2 words should pass
-        assert validate_summary_length(short_original, summary, 0.6) == True
+        assert validate_summary_length(short_original, summary, 0.6)
 
         # Empty summary
-        assert validate_summary_length(short_original, "", 0.2) == True
+        assert validate_summary_length(short_original, "", 0.2)
 
         # Empty original
-        assert validate_summary_length("", "summary", 0.2) == False
+        assert not validate_summary_length("", "summary", 0.2)
 
     def test_format_summary_section_basic_formatting(self):
         """Test that format_summary_section creates proper Markdown format."""
@@ -1222,9 +1222,9 @@ class TestIntegratedWorkflow:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
                 entry = "Today's reflection with default timestamp."
 
-                before_call = datetime.now()
+                datetime.now()
                 result = save_journal_entry_with_summary(entry)
-                after_call = datetime.now()
+                datetime.now()
 
                 # Should save successfully
                 assert "Journal entry saved" in result
@@ -1315,8 +1315,8 @@ class TestConfigurationIntegration:
         short_text = " ".join(["word"] * 149)
 
         # Should use settings default (150)
-        assert exceeds_word_limit(long_text) == True
-        assert exceeds_word_limit(short_text) == False
+        assert exceeds_word_limit(long_text)
+        assert not exceeds_word_limit(short_text)
 
         # Verify it's actually using the settings value
         assert exceeds_word_limit(long_text) == (
@@ -1328,8 +1328,8 @@ class TestConfigurationIntegration:
         text = " ".join(["word"] * 100)
 
         # Test with custom limit
-        assert exceeds_word_limit(text, word_limit=50) == True
-        assert exceeds_word_limit(text, word_limit=150) == False
+        assert exceeds_word_limit(text, word_limit=50)
+        assert not exceeds_word_limit(text, word_limit=150)
 
     @patch("core.llm.get_model")
     def test_generate_summary_uses_settings_defaults(self, mock_get_model):
@@ -1379,8 +1379,8 @@ class TestConfigurationIntegration:
 
         # Create test content that's exactly at the threshold
         threshold = settings.JOURNALING_WORD_COUNT_THRESHOLD
-        content_at_threshold = " ".join(["word"] * threshold)
-        content_over_threshold = " ".join(["word"] * (threshold + 1))
+        " ".join(["word"] * threshold)
+        " ".join(["word"] * (threshold + 1))
         content_under_threshold = " ".join(["word"] * (threshold - 1))
 
         # Test under threshold (should not attempt summarization)
@@ -1437,7 +1437,7 @@ class TestConfigurationIntegration:
 
             assert test_settings.JOURNALING_WORD_COUNT_THRESHOLD == 200
             assert test_settings.JOURNALING_SUMMARY_RATIO == 0.3
-            assert test_settings.JOURNALING_ENABLE_SUMMARIZATION == False
+            assert not test_settings.JOURNALING_ENABLE_SUMMARIZATION
             assert test_settings.JOURNALING_SUMMARY_MIN_WORDS == 30
             assert test_settings.JOURNALING_MAX_SUMMARY_ATTEMPTS == 5
 
@@ -2386,13 +2386,13 @@ class TestMoodSearch:
         """Test exact mood matching."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create test files with different moods
-            happy_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "happy.md", "Happy content", {"mood": "happy"}
             )
-            productive_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "productive.md", "Work content", {"mood": "productive"}
             )
-            stressed_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "stressed.md", "Stressed content", {"mood": "stressed"}
             )
 
@@ -2407,7 +2407,7 @@ class TestMoodSearch:
         """Test partial mood matching."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create test file with compound mood
-            compound_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "compound.md",
                 "Mixed feelings",
@@ -2423,7 +2423,7 @@ class TestMoodSearch:
     def test_search_by_mood_case_insensitive(self):
         """Test case insensitive mood search."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            happy_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "happy.md", "Happy content", {"mood": "Happy"}
             )
 
@@ -2436,9 +2436,7 @@ class TestMoodSearch:
     def test_search_by_mood_no_matches(self):
         """Test mood search with no matches."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            sad_file = create_test_file_with_frontmatter(
-                temp_dir, "sad.md", "Sad content", {"mood": "sad"}
-            )
+            create_test_file_with_frontmatter(temp_dir, "sad.md", "Sad content", {"mood": "sad"})
 
             # Search for non-existent mood
             results = search_by_mood("happy", journal_dir=temp_dir)
@@ -2448,7 +2446,7 @@ class TestMoodSearch:
     def test_search_by_mood_no_mood_field(self):
         """Test mood search with files that have no mood field."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            no_mood_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "no_mood.md", "Content without mood", {"keywords": ["test"]}
             )
 
@@ -2474,13 +2472,13 @@ class TestTopicsSearch:
     def test_search_by_topics_single_topic(self):
         """Test search with single topic."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            work_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "work.md",
                 "Work content",
                 {"topics": ["work", "productivity"]},
             )
-            personal_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "personal.md",
                 "Personal content",
@@ -2496,19 +2494,19 @@ class TestTopicsSearch:
     def test_search_by_topics_multiple_topics_any_match(self):
         """Test search with multiple topics, any match."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            work_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "work.md",
                 "Work content",
                 {"topics": ["work", "productivity"]},
             )
-            health_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "health.md",
                 "Health content",
                 {"topics": ["health", "exercise"]},
             )
-            mixed_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "mixed.md", "Mixed content", {"topics": ["work", "health"]}
             )
 
@@ -2520,13 +2518,13 @@ class TestTopicsSearch:
     def test_search_by_topics_multiple_topics_all_match(self):
         """Test search with multiple topics, all must match."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            work_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "work.md",
                 "Work content",
                 {"topics": ["work", "productivity"]},
             )
-            mixed_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "mixed.md",
                 "Mixed content",
@@ -2543,7 +2541,7 @@ class TestTopicsSearch:
     def test_search_by_topics_case_insensitive(self):
         """Test case insensitive topics search."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            work_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "work.md",
                 "Work content",
@@ -2558,13 +2556,13 @@ class TestTopicsSearch:
     def test_search_by_topics_scoring(self):
         """Test topics search result scoring."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            exact_match_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "exact.md",
                 "Exact match",
                 {"topics": ["work", "productivity"]},
             )
-            partial_match_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "partial.md",
                 "Partial match",
@@ -2581,7 +2579,7 @@ class TestTopicsSearch:
     def test_search_by_topics_no_matches(self):
         """Test topics search with no matches."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            work_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "work.md",
                 "Work content",
@@ -2595,7 +2593,7 @@ class TestTopicsSearch:
     def test_search_by_topics_no_topics_field(self):
         """Test topics search with files that have no topics field."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            no_topics_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir, "no_topics.md", "Content without topics", {"mood": "happy"}
             )
 
@@ -2615,7 +2613,7 @@ class TestTopicsSearch:
     def test_search_by_topics_string_input(self):
         """Test topics search with string input (single topic)."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            work_file = create_test_file_with_frontmatter(
+            create_test_file_with_frontmatter(
                 temp_dir,
                 "work.md",
                 "Work content",

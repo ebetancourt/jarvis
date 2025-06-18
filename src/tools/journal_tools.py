@@ -75,19 +75,13 @@ def ensure_journal_directory() -> str:
         # Check if parent directory has enough disk space
         parent_dir = journal_dir.parent
         if not check_disk_space(str(parent_dir)):
-            raise OSError(
-                f"Insufficient disk space to create journal directory at {journal_dir}"
-            )
+            raise OSError(f"Insufficient disk space to create journal directory at {journal_dir}")
 
         # Check parent directory permissions before attempting to create subdirectory
         if parent_dir.exists():
-            readable, writable, executable = check_directory_permissions(
-                str(parent_dir)
-            )
+            readable, writable, executable = check_directory_permissions(str(parent_dir))
             if not writable:
-                raise PermissionError(
-                    f"No write permission for parent directory {parent_dir}"
-                )
+                raise PermissionError(f"No write permission for parent directory {parent_dir}")
 
         # Create directory if it doesn't exist (parents=True creates intermediates)
         journal_dir.mkdir(parents=True, exist_ok=True)
@@ -112,17 +106,11 @@ def ensure_journal_directory() -> str:
     except OSError as e:
         # Enhanced OSError handling with specific error codes
         if e.errno == errno.ENOSPC:
-            raise OSError(
-                f"No space left on device to create journal directory {journal_dir}"
-            )
+            raise OSError(f"No space left on device to create journal directory {journal_dir}")
         elif e.errno == errno.EACCES:
-            raise PermissionError(
-                f"Access denied when creating journal directory {journal_dir}"
-            )
+            raise PermissionError(f"Access denied when creating journal directory {journal_dir}")
         elif e.errno == errno.EROFS:
-            raise OSError(
-                f"Read-only file system, cannot create journal directory {journal_dir}"
-            )
+            raise OSError(f"Read-only file system, cannot create journal directory {journal_dir}")
         elif "Insufficient disk space" in str(e):
             raise e  # Re-raise our custom disk space error
         else:
@@ -164,9 +152,7 @@ def create_daily_file(target_date: date | None = None) -> str:
         # Check directory permissions
         readable, writable, executable = check_directory_permissions(journal_dir)
         if not writable:
-            raise PermissionError(
-                f"No write permission for journal directory {journal_dir}"
-            )
+            raise PermissionError(f"No write permission for journal directory {journal_dir}")
 
         # Create the file if it doesn't exist (touch behavior)
         Path(file_path).touch(exist_ok=True)
@@ -436,9 +422,7 @@ def exceeds_word_limit(text: str, word_limit: int | None = None) -> bool:
     return count_words(text) > word_limit
 
 
-def validate_summary_length(
-    original_text: str, summary_text: str, max_ratio: float = 0.2
-) -> bool:
+def validate_summary_length(original_text: str, summary_text: str, max_ratio: float = 0.2) -> bool:
     """
     Validates that a summary meets the length requirement relative to original text.
 
@@ -533,9 +517,7 @@ Write a summary that captures the essence of this entry:"""
             # Generate summary with simpler retry logic
             response = model.invoke(prompt)
             summary = (
-                response.content.strip()
-                if hasattr(response, "content")
-                else str(response).strip()
+                response.content.strip() if hasattr(response, "content") else str(response).strip()
             )
 
             # Basic validation - be more lenient
@@ -563,9 +545,7 @@ Write a summary that captures the essence of this entry:"""
             raise OSError("AI model produced an invalid summary")
 
         except ImportError:
-            raise OSError(
-                "AI model is not available - core.get_model() cannot be imported"
-            )
+            raise OSError("AI model is not available - core.get_model() cannot be imported")
         except Exception as e:
             raise OSError(f"AI model invocation failed: {e}")
 
@@ -698,9 +678,7 @@ def save_journal_entry_with_summary(
     if needs_summary:
         try:
             # Generate and format the summary
-            formatted_summary = generate_formatted_summary(
-                entry_content, max_summary_ratio
-            )
+            formatted_summary = generate_formatted_summary(entry_content, max_summary_ratio)
 
             # Append summary to the entry
             entry_content_with_summary = f"{entry_content}\n\n{formatted_summary}"
@@ -719,13 +697,9 @@ def save_journal_entry_with_summary(
             # If summarization fails, save without summary but log the issue
             import warnings
 
-            warnings.warn(
-                f"Failed to generate summary: {e}. Saving entry without summary."
-            )
+            warnings.warn(f"Failed to generate summary: {e}. Saving entry without summary.")
 
-            file_path = add_timestamp_entry(
-                entry_content, custom_date.date(), custom_date.time()
-            )
+            file_path = add_timestamp_entry(entry_content, custom_date.date(), custom_date.time())
 
             return (
                 f"Journal entry saved to {file_path}. "
@@ -734,9 +708,7 @@ def save_journal_entry_with_summary(
             )
     else:
         # Save entry without summary
-        file_path = add_timestamp_entry(
-            entry_content, custom_date.date(), custom_date.time()
-        )
+        file_path = add_timestamp_entry(entry_content, custom_date.date(), custom_date.time())
 
         return (
             f"Journal entry saved to {file_path}. "
@@ -858,9 +830,7 @@ def update_frontmatter(file_path: str, metadata: dict[str, Any]) -> None:
 
         # Generate YAML frontmatter
         try:
-            yaml_content = yaml.dump(
-                updated_frontmatter, default_flow_style=False, sort_keys=True
-            )
+            yaml_content = yaml.dump(updated_frontmatter, default_flow_style=False, sort_keys=True)
         except yaml.YAMLError as e:
             raise yaml.YAMLError(f"Failed to serialize metadata to YAML: {e}")
 
@@ -1094,14 +1064,10 @@ def _parse_date_parameter(date_param: str | date) -> date:
         except (ValueError, TypeError):
             raise ValueError(f"Invalid date format '{date_param}'. Expected YYYY-MM-DD")
 
-    raise ValueError(
-        f"Date parameter must be string or date object, got {type(date_param)}"
-    )
+    raise ValueError(f"Date parameter must be string or date object, got {type(date_param)}")
 
 
-def _date_in_range(
-    file_date: date, start_date: date | None, end_date: date | None
-) -> bool:
+def _date_in_range(file_date: date, start_date: date | None, end_date: date | None) -> bool:
     """
     Check if a file date falls within the specified range.
 
@@ -1215,9 +1181,7 @@ def search_by_keywords(
         raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
 
     # Sort results by match score (highest first), then by date (newest first)
-    results.sort(
-        key=lambda x: (-x.get("match_score", 0), x.get("date", "")), reverse=True
-    )
+    results.sort(key=lambda x: (-x.get("match_score", 0), x.get("date", "")), reverse=True)
 
     return results
 
@@ -1350,9 +1314,7 @@ def _calculate_match_score(
 
     # Prepare search texts
     content_text = content if search_content else ""
-    frontmatter_text = (
-        _extract_searchable_frontmatter_text(metadata) if search_frontmatter else ""
-    )
+    frontmatter_text = _extract_searchable_frontmatter_text(metadata) if search_frontmatter else ""
 
     if not case_sensitive:
         content_text = content_text.lower()
@@ -1525,16 +1487,12 @@ def search_by_topics(
         raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
 
     # Sort results by topic match score (highest first), then by date (newest first)
-    results.sort(
-        key=lambda x: (-x.get("topic_match_score", 0), x.get("date", "")), reverse=True
-    )
+    results.sort(key=lambda x: (-x.get("topic_match_score", 0), x.get("date", "")), reverse=True)
 
     return results
 
 
-def _topics_match(
-    file_topics: list[str], search_topics: list[str], match_all: bool
-) -> bool:
+def _topics_match(file_topics: list[str], search_topics: list[str], match_all: bool) -> bool:
     """
     Check if a file's topics match the search criteria.
 
@@ -1561,9 +1519,7 @@ def _topics_match(
         return any(topic in file_topics_lower for topic in search_topics_lower)
 
 
-def _calculate_topic_match_score(
-    file_topics: list[str], search_topics: list[str]
-) -> int:
+def _calculate_topic_match_score(file_topics: list[str], search_topics: list[str]) -> int:
     """
     Calculate a score for topic matching to rank results.
 
