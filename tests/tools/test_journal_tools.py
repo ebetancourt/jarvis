@@ -1,45 +1,60 @@
-import tempfile
 import os
-from pathlib import Path
-from unittest.mock import patch, Mock
-import pytest
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 import yaml
 
 # Add src to path for importing the source modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from tools.journal_tools import (
-    ensure_journal_directory,
-    get_journal_directory,
-    create_daily_file,
-    format_file_title,
+    _calculate_match_score,
+    _date_in_range,
+    _extract_searchable_frontmatter_text,
+    _normalize_list_field,
+    _parse_date_parameter,
+    add_metadata_to_entry,
     add_timestamp_entry,
     append_to_existing_file,
-    check_disk_space,
     check_directory_permissions,
+    check_disk_space,
     count_words,
+    create_daily_file,
+    ensure_journal_directory,
     exceeds_word_limit,
-    generate_summary,
-    validate_summary_length,
-    format_summary_section,
-    generate_formatted_summary,
-    save_journal_entry_with_summary,
-    parse_frontmatter,
     extract_content_without_frontmatter,
-    update_frontmatter,
+    format_file_title,
+    format_summary_section,
+    generate_summary,
+    get_journal_directory,
     get_journal_metadata,
-    add_metadata_to_entry,
-    _normalize_list_field,
+    parse_frontmatter,
+    save_journal_entry_with_summary,
     search_by_date_range,
-    _parse_date_parameter,
-    _date_in_range,
     search_by_keywords,
-    _extract_searchable_frontmatter_text,
-    _calculate_match_score,
     search_by_mood,
     search_by_topics,
+    update_frontmatter,
+    validate_summary_length,
 )
+
+
+def create_test_file_with_frontmatter(
+    temp_dir: str, filename: str, content: str, metadata: dict
+) -> str:
+    """Helper function to create a test file with YAML frontmatter."""
+    file_path = os.path.join(temp_dir, filename)
+
+    frontmatter_yaml = yaml.dump(metadata, default_flow_style=False)
+    file_content = f"---\n{frontmatter_yaml}---\n{content}"
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(file_content)
+
+    return file_path
 
 
 class TestJournalDirectoryFunctions:
@@ -115,9 +130,7 @@ class TestJournalDirectoryFunctions:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
                 # Mock mkdir to raise OSError
                 with patch.object(Path, "mkdir", side_effect=OSError("Disk full")):
-                    with pytest.raises(
-                        OSError, match="Failed to create journal directory"
-                    ):
+                    with pytest.raises(OSError, match="Failed to create journal directory"):
                         ensure_journal_directory()
 
     def test_create_daily_file_default_date(self):
@@ -301,7 +314,7 @@ class TestJournalDirectoryFunctions:
                 # Verify the file was created and has correct content
                 assert os.path.exists(result_path)
 
-                with open(result_path, "r", encoding="utf-8") as f:
+                with open(result_path, encoding="utf-8") as f:
                     content = f.read()
 
                 # Verify content includes title, timestamp, and entry
@@ -331,7 +344,7 @@ class TestJournalDirectoryFunctions:
                 assert result_path1 == result_path2
 
                 # Verify content has both entries
-                with open(result_path1, "r", encoding="utf-8") as f:
+                with open(result_path1, encoding="utf-8") as f:
                     content = f.read()
 
                 assert "## 09:00:00" in content
@@ -363,7 +376,7 @@ class TestJournalDirectoryFunctions:
                 assert result_path.endswith(expected_filename)
 
                 # Verify content
-                with open(result_path, "r", encoding="utf-8") as f:
+                with open(result_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert test_content in content
@@ -386,7 +399,7 @@ class TestJournalDirectoryFunctions:
                 assert result_path.endswith("2024-12-31.md")
 
                 # Verify content
-                with open(result_path, "r", encoding="utf-8") as f:
+                with open(result_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert "# Tuesday, 31st of December 2024" in content
@@ -405,7 +418,7 @@ class TestJournalDirectoryFunctions:
 
                 result_path = add_timestamp_entry(test_content, test_date, test_time)
 
-                with open(result_path, "r", encoding="utf-8") as f:
+                with open(result_path, encoding="utf-8") as f:
                     lines = f.readlines()
 
                 # Verify structure:
@@ -431,11 +444,9 @@ class TestJournalDirectoryFunctions:
                 # Add multiple entries
                 add_timestamp_entry("First entry", test_date, time(9, 0, 0))
                 add_timestamp_entry("Second entry", test_date, time(12, 0, 0))
-                result_path = add_timestamp_entry(
-                    "Third entry", test_date, time(18, 0, 0)
-                )
+                result_path = add_timestamp_entry("Third entry", test_date, time(18, 0, 0))
 
-                with open(result_path, "r", encoding="utf-8") as f:
+                with open(result_path, encoding="utf-8") as f:
                     content = f.read()
 
                 # Should have proper spacing between entries
@@ -467,7 +478,7 @@ class TestJournalDirectoryFunctions:
             append_to_existing_file(test_file, new_content)
 
             # Verify the result
-            with open(test_file, "r", encoding="utf-8") as f:
+            with open(test_file, encoding="utf-8") as f:
                 result = f.read()
 
             expected = "Initial content\n\nNew content"
@@ -487,7 +498,7 @@ class TestJournalDirectoryFunctions:
             append_to_existing_file(test_file, new_content)
 
             # Verify the result
-            with open(test_file, "r", encoding="utf-8") as f:
+            with open(test_file, encoding="utf-8") as f:
                 result = f.read()
 
             assert result == new_content
@@ -513,7 +524,7 @@ class TestJournalDirectoryFunctions:
             append_to_existing_file(test_file, "New content")
 
             # Verify proper spacing
-            with open(test_file, "r", encoding="utf-8") as f:
+            with open(test_file, encoding="utf-8") as f:
                 result = f.read()
 
             # Should strip existing content and add proper spacing
@@ -535,7 +546,7 @@ class TestJournalDirectoryFunctions:
             append_to_existing_file(test_file, new_content)
 
             # Verify the result
-            with open(test_file, "r", encoding="utf-8") as f:
+            with open(test_file, encoding="utf-8") as f:
                 result = f.read()
 
             expected = f"{initial_content}\n\n{new_content}"
@@ -572,9 +583,7 @@ class TestJournalDirectoryFunctions:
 
     def test_check_directory_permissions_nonexistent_directory(self):
         """Test check_directory_permissions with nonexistent directory."""
-        readable, writable, executable = check_directory_permissions(
-            "/definitely/does/not/exist"
-        )
+        readable, writable, executable = check_directory_permissions("/definitely/does/not/exist")
         assert readable is False
         assert writable is False
         assert executable is False
@@ -584,9 +593,7 @@ class TestJournalDirectoryFunctions:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tools.journal_tools.DATA_DIR", temp_dir):
                 # Mock check_directory_permissions to return no write permission
-                with patch(
-                    "tools.journal_tools.check_directory_permissions"
-                ) as mock_check:
+                with patch("tools.journal_tools.check_directory_permissions") as mock_check:
                     mock_check.return_value = (True, False, True)  # No write permission
 
                     with pytest.raises(
@@ -635,9 +642,7 @@ class TestJournalDirectoryFunctions:
                 ensure_journal_directory()
 
                 # Mock check_directory_permissions to return no write permission
-                with patch(
-                    "tools.journal_tools.check_directory_permissions"
-                ) as mock_check:
+                with patch("tools.journal_tools.check_directory_permissions") as mock_check:
                     # Return False for write permission during file creation
                     mock_check.return_value = (True, False, True)
 
@@ -661,9 +666,7 @@ class TestJournalDirectoryFunctions:
                 # Mock no read permission
                 mock_access.side_effect = lambda path, mode: mode != os.R_OK
 
-                with pytest.raises(
-                    PermissionError, match="No read permission for file"
-                ):
+                with pytest.raises(PermissionError, match="No read permission for file"):
                     append_to_existing_file(test_file, "New content")
 
             # Test write permission error
@@ -671,9 +674,7 @@ class TestJournalDirectoryFunctions:
                 # Mock no write permission
                 mock_access.side_effect = lambda path, mode: mode != os.W_OK
 
-                with pytest.raises(
-                    PermissionError, match="No write permission for file"
-                ):
+                with pytest.raises(PermissionError, match="No write permission for file"):
                     append_to_existing_file(test_file, "New content")
 
     def test_append_to_existing_file_disk_space_error(self):
@@ -689,9 +690,7 @@ class TestJournalDirectoryFunctions:
             with patch("tools.journal_tools.check_disk_space") as mock_check:
                 mock_check.return_value = False
 
-                with pytest.raises(
-                    OSError, match="Insufficient disk space to append to file"
-                ):
+                with pytest.raises(OSError, match="Insufficient disk space to append to file"):
                     append_to_existing_file(test_file, "New content")
 
 
@@ -862,12 +861,8 @@ class TestWordCounting:
             word_count = count_words(text)
             exceeds = exceeds_word_limit(text)
 
-            assert (
-                word_count == expected_count
-            ), f"Word count failed for {len(text.split())} words"
-            assert (
-                exceeds == should_exceed
-            ), f"Exceed check failed for {word_count} words"
+            assert word_count == expected_count, f"Word count failed for {len(text.split())} words"
+            assert exceeds == should_exceed, f"Exceed check failed for {word_count} words"
 
 
 class TestSummarization:
@@ -897,9 +892,7 @@ class TestSummarization:
         for short_text in short_texts:
             word_count = count_words(short_text)
             if word_count < 20:
-                with pytest.raises(
-                    ValueError, match="Text is too short to meaningfully summarize"
-                ):
+                with pytest.raises(ValueError, match="Text is too short to meaningfully summarize"):
                     generate_summary(short_text)
 
     @patch("langchain_aws.ChatBedrock")  # Mock the problematic import
@@ -959,9 +952,7 @@ class TestSummarization:
         mock_model.invoke.side_effect = Exception("API rate limit exceeded")
         mock_get_model.return_value = mock_model
 
-        with pytest.raises(
-            OSError, match="Failed to generate summary due to AI model error"
-        ):
+        with pytest.raises(OSError, match="Failed to generate summary due to AI model error"):
             generate_summary(test_entry)
 
         # Test empty response
@@ -1080,14 +1071,10 @@ class TestSummarization:
 
         for empty_text in test_cases:
             if empty_text is None:
-                with pytest.raises(
-                    ValueError, match="Cannot format empty summary text"
-                ):
+                with pytest.raises(ValueError, match="Cannot format empty summary text"):
                     format_summary_section(empty_text)
             else:
-                with pytest.raises(
-                    ValueError, match="Cannot format empty summary text"
-                ):
+                with pytest.raises(ValueError, match="Cannot format empty summary text"):
                     format_summary_section(empty_text)
 
     def test_format_summary_section_special_characters(self):
@@ -1097,9 +1084,7 @@ class TestSummarization:
         result = format_summary_section(summary_with_special)
 
         # Should preserve Markdown formatting within the summary
-        expected = (
-            "### Summary\n\nSummary with *emphasis*, **bold**, and `code` elements."
-        )
+        expected = "### Summary\n\nSummary with *emphasis*, **bold**, and `code` elements."
         assert result == expected
 
     def test_format_summary_section_consistency(self):
@@ -1132,9 +1117,7 @@ class TestIntegratedWorkflow:
                 test_date = date(2025, 1, 10)
                 test_time = time(15, 30, 0)
 
-                result = save_journal_entry_with_summary(
-                    short_entry, test_date, test_time
-                )
+                result = save_journal_entry_with_summary(short_entry, test_date, test_time)
 
                 # Verify success message indicates no summary needed
                 assert "under 150 word limit" in result
@@ -1144,7 +1127,7 @@ class TestIntegratedWorkflow:
                 file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
                 assert os.path.exists(file_path)
 
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert short_entry in content
@@ -1170,9 +1153,7 @@ class TestIntegratedWorkflow:
                 mock_model.invoke.return_value = mock_response
                 mock_get_model.return_value = mock_model
 
-                result = save_journal_entry_with_summary(
-                    long_entry, test_date, test_time
-                )
+                result = save_journal_entry_with_summary(long_entry, test_date, test_time)
 
                 # Verify success message indicates summary was added
                 assert "summary was automatically added" in result
@@ -1183,7 +1164,7 @@ class TestIntegratedWorkflow:
                 file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
                 assert os.path.exists(file_path)
 
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert long_entry in content
@@ -1216,9 +1197,7 @@ class TestIntegratedWorkflow:
                 mock_get_model.return_value = mock_model
 
                 with patch("warnings.warn") as mock_warn:
-                    result = save_journal_entry_with_summary(
-                        long_entry, test_date, test_time
-                    )
+                    result = save_journal_entry_with_summary(long_entry, test_date, test_time)
 
                 # Verify warning was issued and entry saved without summary
                 mock_warn.assert_called_once()
@@ -1229,7 +1208,7 @@ class TestIntegratedWorkflow:
                 file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
                 assert os.path.exists(file_path)
 
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert long_entry in content
@@ -1262,7 +1241,7 @@ class TestIntegratedWorkflow:
 
                 # Verify content includes our entry
                 file_path = os.path.join(journal_dir, expected_filename)
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert entry in content
@@ -1307,9 +1286,7 @@ Reflection 2: I learned that breaking down big tasks into smaller chunks really 
                 test_date = date(2025, 1, 10)
                 test_time = time(19, 30, 0)
 
-                result = save_journal_entry_with_summary(
-                    conversation_content, test_date, test_time
-                )
+                result = save_journal_entry_with_summary(conversation_content, test_date, test_time)
 
                 # Verify successful save
                 assert "Journal entry saved" in result
@@ -1317,7 +1294,7 @@ Reflection 2: I learned that breaking down big tasks into smaller chunks really 
 
                 # Verify file content preserves conversation structure
                 file_path = os.path.join(temp_dir, "journal", "2025-01-10.md")
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     content = f.read()
 
                 assert "Today was quite challenging" in content
@@ -1418,8 +1395,9 @@ class TestConfigurationIntegration:
 
     def test_configuration_validation_in_settings(self):
         """Test that the configuration values in settings have proper validation."""
-        from core.settings import Settings
         from pydantic import ValidationError
+
+        from core.settings import Settings
 
         # Test invalid word count threshold (too low)
         with pytest.raises(ValidationError):
@@ -1439,9 +1417,10 @@ class TestConfigurationIntegration:
 
     def test_settings_environment_variable_integration(self):
         """Test that environment variables properly configure journaling settings."""
-        from core.settings import Settings
         import os
         from unittest.mock import patch
+
+        from core.settings import Settings
 
         # Test environment variable override
         with patch.dict(
@@ -1609,9 +1588,7 @@ keywords: ["old"]
             # Verify the update
             updated_frontmatter = parse_frontmatter(test_file)
             assert updated_frontmatter["mood"] == "happy"
-            assert updated_frontmatter["keywords"] == [
-                "old"
-            ]  # Should preserve existing
+            assert updated_frontmatter["keywords"] == ["old"]  # Should preserve existing
             assert updated_frontmatter["topics"] == ["new topic"]
 
     def test_update_frontmatter_add_to_no_frontmatter(self):
@@ -1667,9 +1644,7 @@ This is a test entry with multiple words for counting."""
             assert result["date"] == "2025-01-10"
             assert result["word_count"] > 0
             assert result["file_path"] == test_file
-            assert (
-                result["custom_field"] == "custom value"
-            )  # Additional fields preserved
+            assert result["custom_field"] == "custom value"  # Additional fields preserved
 
     def test_get_journal_metadata_no_frontmatter(self):
         """Test getting metadata from file without frontmatter."""
@@ -1789,7 +1764,7 @@ keywords: ["old"]
             add_metadata_to_entry(test_file)
 
             # Verify no changes were made
-            with open(test_file, "r", encoding="utf-8") as f:
+            with open(test_file, encoding="utf-8") as f:
                 result_content = f.read()
 
             assert result_content == original_content
@@ -2100,9 +2075,7 @@ class TestKeywordSearch:
             assert results[0]["date"] == "2025-01-10"
 
             # Test multiple keyword search
-            results = search_by_keywords(
-                ["project", "planning"], journal_dir=journal_dir
-            )
+            results = search_by_keywords(["project", "planning"], journal_dir=journal_dir)
             assert len(results) == 2
             dates = [r["date"] for r in results]
             assert "2025-01-10" in dates  # "projects"
@@ -2169,14 +2142,10 @@ Enjoyed the outdoors."""
             assert len(results) == 1
 
             # Case sensitive
-            results = search_by_keywords(
-                "coding", case_sensitive=True, journal_dir=journal_dir
-            )
+            results = search_by_keywords("coding", case_sensitive=True, journal_dir=journal_dir)
             assert len(results) == 0  # "coding" != "CODING"
 
-            results = search_by_keywords(
-                "CODING", case_sensitive=True, journal_dir=journal_dir
-            )
+            results = search_by_keywords("CODING", case_sensitive=True, journal_dir=journal_dir)
             assert len(results) == 1
 
     def test_search_by_keywords_search_options(self):
@@ -2543,9 +2512,7 @@ class TestTopicsSearch:
                 temp_dir, "mixed.md", "Mixed content", {"topics": ["work", "health"]}
             )
 
-            results = search_by_topics(
-                ["work", "exercise"], match_all=False, journal_dir=temp_dir
-            )
+            results = search_by_topics(["work", "exercise"], match_all=False, journal_dir=temp_dir)
 
             # Should match work.md, health.md, and mixed.md
             assert len(results) == 3

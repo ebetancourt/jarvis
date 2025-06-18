@@ -1,14 +1,17 @@
-import os
-import stat
 import errno
+import os
 import shutil
-from pathlib import Path
+import stat
+import warnings
 from datetime import date, datetime, time
-from typing import Optional, Dict, Any, List, Union
-from common.data import DATA_DIR
-from core.settings import settings
-from core import get_model
+from pathlib import Path
+from typing import Any
+
 import yaml
+
+from common.data import DATA_DIR
+from core import get_model
+from core.settings import settings
 
 
 def check_disk_space(path: str, required_bytes: int = 1024 * 1024) -> bool:
@@ -72,19 +75,13 @@ def ensure_journal_directory() -> str:
         # Check if parent directory has enough disk space
         parent_dir = journal_dir.parent
         if not check_disk_space(str(parent_dir)):
-            raise OSError(
-                f"Insufficient disk space to create journal directory at {journal_dir}"
-            )
+            raise OSError(f"Insufficient disk space to create journal directory at {journal_dir}")
 
         # Check parent directory permissions before attempting to create subdirectory
         if parent_dir.exists():
-            readable, writable, executable = check_directory_permissions(
-                str(parent_dir)
-            )
+            readable, writable, executable = check_directory_permissions(str(parent_dir))
             if not writable:
-                raise PermissionError(
-                    f"No write permission for parent directory {parent_dir}"
-                )
+                raise PermissionError(f"No write permission for parent directory {parent_dir}")
 
         # Create directory if it doesn't exist (parents=True creates intermediates)
         journal_dir.mkdir(parents=True, exist_ok=True)
@@ -104,30 +101,23 @@ def ensure_journal_directory() -> str:
             raise e  # Re-raise our custom permission error
         else:
             raise PermissionError(
-                f"Unable to create or set permissions for journal directory "
-                f"{journal_dir}: {e}"
+                f"Unable to create or set permissions for journal directory {journal_dir}: {e}"
             )
     except OSError as e:
         # Enhanced OSError handling with specific error codes
         if e.errno == errno.ENOSPC:
-            raise OSError(
-                f"No space left on device to create journal directory {journal_dir}"
-            )
+            raise OSError(f"No space left on device to create journal directory {journal_dir}")
         elif e.errno == errno.EACCES:
-            raise PermissionError(
-                f"Access denied when creating journal directory {journal_dir}"
-            )
+            raise PermissionError(f"Access denied when creating journal directory {journal_dir}")
         elif e.errno == errno.EROFS:
-            raise OSError(
-                f"Read-only file system, cannot create journal directory {journal_dir}"
-            )
+            raise OSError(f"Read-only file system, cannot create journal directory {journal_dir}")
         elif "Insufficient disk space" in str(e):
             raise e  # Re-raise our custom disk space error
         else:
             raise OSError(f"Failed to create journal directory {journal_dir}: {e}")
 
 
-def create_daily_file(target_date: Optional[date] = None) -> str:
+def create_daily_file(target_date: date | None = None) -> str:
     """
     Creates a daily journal file with the naming format YYYY-MM-DD.md.
 
@@ -162,9 +152,7 @@ def create_daily_file(target_date: Optional[date] = None) -> str:
         # Check directory permissions
         readable, writable, executable = check_directory_permissions(journal_dir)
         if not writable:
-            raise PermissionError(
-                f"No write permission for journal directory {journal_dir}"
-            )
+            raise PermissionError(f"No write permission for journal directory {journal_dir}")
 
         # Create the file if it doesn't exist (touch behavior)
         Path(file_path).touch(exist_ok=True)
@@ -185,7 +173,7 @@ def create_daily_file(target_date: Optional[date] = None) -> str:
             raise OSError(f"Failed to create daily journal file {filename}: {e}")
 
 
-def format_file_title(target_date: Optional[date] = None) -> str:
+def format_file_title(target_date: date | None = None) -> str:
     """
     Formats a date into a journal file title.
 
@@ -226,7 +214,7 @@ def format_file_title(target_date: Optional[date] = None) -> str:
 
 
 def add_timestamp_entry(
-    content: str, target_date: Optional[date] = None, target_time: Optional[time] = None
+    content: str, target_date: date | None = None, target_time: time | None = None
 ) -> str:
     """
     Adds a timestamped entry to a daily journal file.
@@ -352,7 +340,7 @@ def append_to_existing_file(file_path: str, content: str) -> None:
             raise OSError(f"Insufficient disk space to append to file {file_path}")
 
         # Read existing content
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             existing_content = f.read().strip()
 
         # Build the new content
@@ -415,7 +403,7 @@ def count_words(text: str) -> int:
     return len(words)
 
 
-def exceeds_word_limit(text: str, word_limit: Optional[int] = None) -> bool:
+def exceeds_word_limit(text: str, word_limit: int | None = None) -> bool:
     """
     Check if the text exceeds the specified word limit.
 
@@ -434,9 +422,7 @@ def exceeds_word_limit(text: str, word_limit: Optional[int] = None) -> bool:
     return count_words(text) > word_limit
 
 
-def validate_summary_length(
-    original_text: str, summary_text: str, max_ratio: float = 0.2
-) -> bool:
+def validate_summary_length(original_text: str, summary_text: str, max_ratio: float = 0.2) -> bool:
     """
     Validates that a summary meets the length requirement relative to original text.
 
@@ -484,7 +470,7 @@ def format_summary_section(summary_text: str) -> str:
     return formatted_section
 
 
-def generate_summary(text: str, max_summary_ratio: Optional[float] = None) -> str:
+def generate_summary(text: str, max_summary_ratio: float | None = None) -> str:
     """
     Generate a meaningful summary of the journal entry using AI.
 
@@ -531,9 +517,7 @@ Write a summary that captures the essence of this entry:"""
             # Generate summary with simpler retry logic
             response = model.invoke(prompt)
             summary = (
-                response.content.strip()
-                if hasattr(response, "content")
-                else str(response).strip()
+                response.content.strip() if hasattr(response, "content") else str(response).strip()
             )
 
             # Basic validation - be more lenient
@@ -561,9 +545,7 @@ Write a summary that captures the essence of this entry:"""
             raise OSError("AI model produced an invalid summary")
 
         except ImportError:
-            raise OSError(
-                "AI model is not available - core.get_model() cannot be imported"
-            )
+            raise OSError("AI model is not available - core.get_model() cannot be imported")
         except Exception as e:
             raise OSError(f"AI model invocation failed: {e}")
 
@@ -649,9 +631,9 @@ def _create_fallback_summary(text: str, max_summary_ratio: float = 0.2) -> str:
 
 def save_journal_entry_with_summary(
     content: str,
-    custom_date: Optional[datetime] = None,
+    custom_date: datetime | None = None,
     force_summary: bool = False,
-    max_summary_ratio: Optional[float] = None,
+    max_summary_ratio: float | None = None,
 ) -> str:
     """
     Save a journal entry with automatic summarization based on configuration.
@@ -696,9 +678,7 @@ def save_journal_entry_with_summary(
     if needs_summary:
         try:
             # Generate and format the summary
-            formatted_summary = generate_formatted_summary(
-                entry_content, max_summary_ratio
-            )
+            formatted_summary = generate_formatted_summary(entry_content, max_summary_ratio)
 
             # Append summary to the entry
             entry_content_with_summary = f"{entry_content}\n\n{formatted_summary}"
@@ -717,13 +697,9 @@ def save_journal_entry_with_summary(
             # If summarization fails, save without summary but log the issue
             import warnings
 
-            warnings.warn(
-                f"Failed to generate summary: {e}. Saving entry without summary."
-            )
+            warnings.warn(f"Failed to generate summary: {e}. Saving entry without summary.")
 
-            file_path = add_timestamp_entry(
-                entry_content, custom_date.date(), custom_date.time()
-            )
+            file_path = add_timestamp_entry(entry_content, custom_date.date(), custom_date.time())
 
             return (
                 f"Journal entry saved to {file_path}. "
@@ -732,9 +708,7 @@ def save_journal_entry_with_summary(
             )
     else:
         # Save entry without summary
-        file_path = add_timestamp_entry(
-            entry_content, custom_date.date(), custom_date.time()
-        )
+        file_path = add_timestamp_entry(entry_content, custom_date.date(), custom_date.time())
 
         return (
             f"Journal entry saved to {file_path}. "
@@ -742,7 +716,7 @@ def save_journal_entry_with_summary(
         )
 
 
-def parse_frontmatter(file_path: str) -> Dict[str, Any]:
+def parse_frontmatter(file_path: str) -> dict[str, Any]:
     """
     Parse YAML frontmatter from a journal file.
 
@@ -764,7 +738,7 @@ def parse_frontmatter(file_path: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Journal file does not exist: {file_path}")
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         # Check if file starts with frontmatter delimiter
@@ -810,7 +784,7 @@ def extract_content_without_frontmatter(file_path: str) -> str:
         raise FileNotFoundError(f"Journal file does not exist: {file_path}")
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
         # Check if file starts with frontmatter
@@ -830,7 +804,7 @@ def extract_content_without_frontmatter(file_path: str) -> str:
         raise OSError(f"Failed to read file {file_path}: {e}")
 
 
-def update_frontmatter(file_path: str, metadata: Dict[str, Any]) -> None:
+def update_frontmatter(file_path: str, metadata: dict[str, Any]) -> None:
     """
     Update or add frontmatter to a journal file.
 
@@ -856,9 +830,7 @@ def update_frontmatter(file_path: str, metadata: Dict[str, Any]) -> None:
 
         # Generate YAML frontmatter
         try:
-            yaml_content = yaml.dump(
-                updated_frontmatter, default_flow_style=False, sort_keys=True
-            )
+            yaml_content = yaml.dump(updated_frontmatter, default_flow_style=False, sort_keys=True)
         except yaml.YAMLError as e:
             raise yaml.YAMLError(f"Failed to serialize metadata to YAML: {e}")
 
@@ -873,7 +845,7 @@ def update_frontmatter(file_path: str, metadata: Dict[str, Any]) -> None:
         raise OSError(f"Failed to update frontmatter in file {file_path}: {e}")
 
 
-def get_journal_metadata(file_path: str) -> Dict[str, Any]:
+def get_journal_metadata(file_path: str) -> dict[str, Any]:
     """
     Get metadata from a journal file's frontmatter.
 
@@ -922,7 +894,7 @@ def get_journal_metadata(file_path: str) -> Dict[str, Any]:
         raise OSError(f"Failed to get metadata from file {file_path}: {e}")
 
 
-def _normalize_list_field(field_value: Union[str, List[str], None]) -> List[str]:
+def _normalize_list_field(field_value: str | list[str] | None) -> list[str]:
     """
     Normalize a field that should be a list of strings.
 
@@ -948,10 +920,10 @@ def _normalize_list_field(field_value: Union[str, List[str], None]) -> List[str]
 
 def add_metadata_to_entry(
     file_path: str,
-    mood: Optional[str] = None,
-    keywords: Optional[List[str]] = None,
-    topics: Optional[List[str]] = None,
-    tags: Optional[List[str]] = None,
+    mood: str | None = None,
+    keywords: list[str] | None = None,
+    topics: list[str] | None = None,
+    tags: list[str] | None = None,
     **additional_metadata: Any,
 ) -> None:
     """
@@ -993,10 +965,10 @@ def add_metadata_to_entry(
 
 
 def search_by_date_range(
-    start_date: Optional[Union[str, date]] = None,
-    end_date: Optional[Union[str, date]] = None,
-    journal_dir: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    start_date: str | date | None = None,
+    end_date: str | date | None = None,
+    journal_dir: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Search for journal entries within a date range.
 
@@ -1068,7 +1040,7 @@ def search_by_date_range(
     return results
 
 
-def _parse_date_parameter(date_param: Union[str, date]) -> date:
+def _parse_date_parameter(date_param: str | date) -> date:
     """
     Parse a date parameter that can be either a string or date object.
 
@@ -1089,17 +1061,13 @@ def _parse_date_parameter(date_param: Union[str, date]) -> date:
             # Parse YYYY-MM-DD format
             year, month, day = date_param.split("-")
             return date(int(year), int(month), int(day))
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             raise ValueError(f"Invalid date format '{date_param}'. Expected YYYY-MM-DD")
 
-    raise ValueError(
-        f"Date parameter must be string or date object, got {type(date_param)}"
-    )
+    raise ValueError(f"Date parameter must be string or date object, got {type(date_param)}")
 
 
-def _date_in_range(
-    file_date: date, start_date: Optional[date], end_date: Optional[date]
-) -> bool:
+def _date_in_range(file_date: date, start_date: date | None, end_date: date | None) -> bool:
     """
     Check if a file date falls within the specified range.
 
@@ -1121,12 +1089,12 @@ def _date_in_range(
 
 
 def search_by_keywords(
-    keywords: Union[str, List[str]],
+    keywords: str | list[str],
     case_sensitive: bool = False,
     search_content: bool = True,
     search_frontmatter: bool = True,
-    journal_dir: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    journal_dir: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Search for journal entries containing specific keywords.
 
@@ -1213,17 +1181,15 @@ def search_by_keywords(
         raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
 
     # Sort results by match score (highest first), then by date (newest first)
-    results.sort(
-        key=lambda x: (-x.get("match_score", 0), x.get("date", "")), reverse=True
-    )
+    results.sort(key=lambda x: (-x.get("match_score", 0), x.get("date", "")), reverse=True)
 
     return results
 
 
 def _file_matches_keywords(
     content: str,
-    metadata: Dict[str, Any],
-    keywords: List[str],
+    metadata: dict[str, Any],
+    keywords: list[str],
     case_sensitive: bool,
     search_content: bool,
     search_frontmatter: bool,
@@ -1270,7 +1236,7 @@ def _file_matches_keywords(
     return False
 
 
-def _extract_searchable_frontmatter_text(metadata: Dict[str, Any]) -> str:
+def _extract_searchable_frontmatter_text(metadata: dict[str, Any]) -> str:
     """
     Extract searchable text from frontmatter metadata.
 
@@ -1319,8 +1285,8 @@ def _extract_searchable_frontmatter_text(metadata: Dict[str, Any]) -> str:
 
 def _calculate_match_score(
     content: str,
-    metadata: Dict[str, Any],
-    keywords: List[str],
+    metadata: dict[str, Any],
+    keywords: list[str],
     case_sensitive: bool,
     search_content: bool,
     search_frontmatter: bool,
@@ -1348,9 +1314,7 @@ def _calculate_match_score(
 
     # Prepare search texts
     content_text = content if search_content else ""
-    frontmatter_text = (
-        _extract_searchable_frontmatter_text(metadata) if search_frontmatter else ""
-    )
+    frontmatter_text = _extract_searchable_frontmatter_text(metadata) if search_frontmatter else ""
 
     if not case_sensitive:
         content_text = content_text.lower()
@@ -1373,8 +1337,8 @@ def _calculate_match_score(
 
 
 def search_by_mood(
-    mood: str, exact_match: bool = False, journal_dir: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    mood: str, exact_match: bool = False, journal_dir: str | None = None
+) -> list[dict[str, Any]]:
     """
     Search for journal entries by mood from frontmatter.
 
@@ -1434,9 +1398,7 @@ def search_by_mood(
     return results
 
 
-def _mood_matches(
-    file_mood: Optional[str], search_mood: str, exact_match: bool
-) -> bool:
+def _mood_matches(file_mood: str | None, search_mood: str, exact_match: bool) -> bool:
     """
     Check if a file's mood matches the search criteria.
 
@@ -1458,10 +1420,10 @@ def _mood_matches(
 
 
 def search_by_topics(
-    topics: Union[str, List[str]],
+    topics: str | list[str],
     match_all: bool = False,
-    journal_dir: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    journal_dir: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Search for journal entries by topics from frontmatter.
 
@@ -1525,16 +1487,12 @@ def search_by_topics(
         raise OSError(f"Cannot access journal directory {journal_dir}: {e}")
 
     # Sort results by topic match score (highest first), then by date (newest first)
-    results.sort(
-        key=lambda x: (-x.get("topic_match_score", 0), x.get("date", "")), reverse=True
-    )
+    results.sort(key=lambda x: (-x.get("topic_match_score", 0), x.get("date", "")), reverse=True)
 
     return results
 
 
-def _topics_match(
-    file_topics: List[str], search_topics: List[str], match_all: bool
-) -> bool:
+def _topics_match(file_topics: list[str], search_topics: list[str], match_all: bool) -> bool:
     """
     Check if a file's topics match the search criteria.
 
@@ -1561,9 +1519,7 @@ def _topics_match(
         return any(topic in file_topics_lower for topic in search_topics_lower)
 
 
-def _calculate_topic_match_score(
-    file_topics: List[str], search_topics: List[str]
-) -> int:
+def _calculate_topic_match_score(file_topics: list[str], search_topics: list[str]) -> int:
     """
     Calculate a score for topic matching to rank results.
 

@@ -1,5 +1,6 @@
-from pydantic import BaseModel
 from langchain_core.documents import Document
+from pydantic import BaseModel
+
 from common.get_vector_store import get_vector_store_from_config
 
 

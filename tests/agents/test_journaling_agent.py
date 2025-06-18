@@ -1,5 +1,5 @@
-from unittest.mock import patch
 import os
+from unittest.mock import patch
 
 
 # Import the journaling agent module directly to avoid dependency issues
@@ -9,9 +9,7 @@ def _import_journaling_agent():
 
     # Get the current file's directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    module_path = os.path.join(
-        current_dir, "..", "..", "src", "agents", "journaling_agent.py"
-    )
+    module_path = os.path.join(current_dir, "..", "..", "src", "agents", "journaling_agent.py")
     module_path = os.path.normpath(module_path)
 
     spec = importlib.util.spec_from_file_location("journaling_agent", module_path)
@@ -33,9 +31,7 @@ except (NameError, FileNotFoundError, AttributeError):
     spec.loader.exec_module(journaling_agent)
 JournalingConversationState = journaling_agent.JournalingConversationState
 generate_guiding_questions = journaling_agent.generate_guiding_questions
-generate_guiding_questions_with_memory = (
-    journaling_agent.generate_guiding_questions_with_memory
-)
+generate_guiding_questions_with_memory = journaling_agent.generate_guiding_questions_with_memory
 generate_confirmation_message = journaling_agent.generate_confirmation_message
 process_conversation_flow = journaling_agent.process_conversation_flow
 _handle_initial_phase = journaling_agent._handle_initial_phase
@@ -95,9 +91,7 @@ class TestJournalingConversationState:
         ]
 
         for signal in non_completion_cases:
-            assert not state.is_session_complete(
-                signal
-            ), f"Incorrectly completed for: '{signal}'"
+            assert not state.is_session_complete(signal), f"Incorrectly completed for: '{signal}'"
 
     def test_add_question(self):
         """Test adding questions to the conversation state."""
@@ -257,9 +251,7 @@ class TestQuestionGeneration:
 
         for response, expected_intro in test_cases:
             question = generate_guiding_questions(response, [])
-            assert question.startswith(
-                expected_intro
-            ), f"Failed for response: '{response}'"
+            assert question.startswith(expected_intro), f"Failed for response: '{response}'"
 
     @patch("agents.journaling_agent.random.choice")
     def test_generate_guiding_questions_avoids_similar_questions(self, mock_choice):
@@ -273,9 +265,7 @@ class TestQuestionGeneration:
         question = generate_guiding_questions(user_response, previous_questions)
 
         # Should not contain questions too similar to previous ones
-        assert (
-            "emotions" not in question.lower()
-        )  # Should avoid emotion-related duplicates
+        assert "emotions" not in question.lower()  # Should avoid emotion-related duplicates
 
     def test_generate_guiding_questions_with_memory_returns_tuple(self):
         """Test that memory-enhanced function returns question and category."""
@@ -297,9 +287,7 @@ class TestQuestionGeneration:
         state.used_question_categories = ["emotions", "thoughts"]
         user_response = "I had a good day."
 
-        question, category = generate_guiding_questions_with_memory(
-            user_response, state
-        )
+        question, category = generate_guiding_questions_with_memory(user_response, state)
 
         # Should select from unused categories
         assert category in ["behaviors", "growth", "priorities"]
@@ -310,9 +298,7 @@ class TestQuestionGeneration:
         state.question_keywords_used = {"emotions", "feeling", "mood"}
         user_response = "I was happy today."
 
-        question, category = generate_guiding_questions_with_memory(
-            user_response, state
-        )
+        question, category = generate_guiding_questions_with_memory(user_response, state)
 
         # Should avoid questions with high keyword overlap
         question_words = set(question.lower().split())
@@ -331,9 +317,7 @@ class TestQuestionGeneration:
         ]
         user_response = "Today was interesting."
 
-        question, category = generate_guiding_questions_with_memory(
-            user_response, state
-        )
+        question, category = generate_guiding_questions_with_memory(user_response, state)
 
         # Should still generate a question even when all categories used
         assert isinstance(question, str)
@@ -355,8 +339,7 @@ class TestConfirmationMessages:
         assert len(message) > 0
         # Should contain encouraging language for deep engagement
         assert any(
-            word in message.lower()
-            for word in ["great", "wonderful", "excellent", "beautiful"]
+            word in message.lower() for word in ["great", "wonderful", "excellent", "beautiful"]
         )
 
     def test_generate_confirmation_message_moderate_engagement(self):
@@ -369,9 +352,7 @@ class TestConfirmationMessages:
         assert isinstance(message, str)
         assert len(message) > 0
         # Should contain appreciative language
-        assert any(
-            word in message.lower() for word in ["thank", "great", "good", "nice"]
-        )
+        assert any(word in message.lower() for word in ["thank", "great", "good", "nice"])
 
     def test_generate_confirmation_message_initial_only(self):
         """Test confirmation messages for initial response only."""
@@ -383,9 +364,7 @@ class TestConfirmationMessages:
         assert isinstance(message, str)
         assert len(message) > 0
         # Should validate brief reflections
-        assert any(
-            phrase in message.lower() for phrase in ["brief", "simple", "reflection"]
-        )
+        assert any(phrase in message.lower() for phrase in ["brief", "simple", "reflection"])
 
     def test_generate_confirmation_message_filters_empty_responses(self):
         """Test that empty responses are filtered from engagement calculation."""
@@ -399,9 +378,7 @@ class TestConfirmationMessages:
         message = generate_confirmation_message(state)
 
         # Should treat as moderate engagement (1 meaningful response)
-        assert any(
-            word in message.lower() for word in ["thank", "great", "good", "nice"]
-        )
+        assert any(word in message.lower() for word in ["thank", "great", "good", "nice"])
 
     @patch("agents.journaling_agent.random.choice")
     def test_generate_confirmation_message_randomization(self, mock_choice):
@@ -488,9 +465,7 @@ class TestConversationFlow:
     def test_handle_questioning_phase_continue(self):
         """Test questioning phase when more questions can be asked."""
         state = JournalingConversationState()
-        state.questions_asked = [
-            "First question"
-        ]  # One question asked, can ask one more
+        state.questions_asked = ["First question"]  # One question asked, can ask one more
         user_message = "I learned a lot about myself."
 
         response, should_save = _handle_questioning_phase(user_message, state)
@@ -564,9 +539,7 @@ class TestIntegration:
         assert len(state.responses_received) == 1
 
         # Second follow-up (should reach limit)
-        response3, save3 = process_conversation_flow(
-            "I learned to manage stress", state
-        )
+        response3, save3 = process_conversation_flow("I learned to manage stress", state)
         assert save3 is True
         assert state.conversation_phase == "completion"
         assert len(state.responses_received) == 2
@@ -615,6 +588,4 @@ class TestIntegration:
         assert len(state.used_question_categories) <= 2  # Max 2 questions
         categories_used = state.used_question_categories
         if len(categories_used) == 2:
-            assert (
-                categories_used[0] != categories_used[1]
-            )  # Should be different categories
+            assert categories_used[0] != categories_used[1]  # Should be different categories

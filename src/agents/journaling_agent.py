@@ -1,26 +1,45 @@
 from datetime import datetime
-from langgraph.prebuilt import create_react_agent
+
 from langchain_core.tools import tool
-from typing import Optional
+from langgraph.prebuilt import create_react_agent
+
+from tools.journal_tools import (
+    add_metadata_to_entry as _add_metadata_to_entry,
+)
+from tools.journal_tools import (
+    add_timestamp_entry as _add_timestamp_entry,
+)
+from tools.journal_tools import (
+    count_words as _count_words,
+)
 
 # Import the underlying journal functions
 from tools.journal_tools import (
     create_daily_file as _create_daily_file,
-    add_timestamp_entry as _add_timestamp_entry,
-    save_journal_entry_with_summary as _save_journal_entry_with_summary,
-    search_by_date_range as _search_by_date_range,
-    search_by_keywords as _search_by_keywords,
-    search_by_mood as _search_by_mood,
-    search_by_topics as _search_by_topics,
-    add_metadata_to_entry as _add_metadata_to_entry,
+)
+from tools.journal_tools import (
     get_journal_metadata as _get_journal_metadata,
-    count_words as _count_words,
+)
+from tools.journal_tools import (
+    save_journal_entry_with_summary as _save_journal_entry_with_summary,
+)
+from tools.journal_tools import (
+    search_by_date_range as _search_by_date_range,
+)
+from tools.journal_tools import (
+    search_by_keywords as _search_by_keywords,
+)
+from tools.journal_tools import (
+    search_by_mood as _search_by_mood,
+)
+from tools.journal_tools import (
+    search_by_topics as _search_by_topics,
 )
 
 
 # Configure journal tools as LangGraph tools
 @tool
-def create_daily_file(target_date: Optional[str] = None) -> str:
+def create_daily_file(target_date: str | None = None) -> str:
     """
     Create a new daily journal file.
 
@@ -54,25 +73,17 @@ def create_daily_file(target_date: Optional[str] = None) -> str:
         )
     except OSError as e:
         if "space" in str(e).lower():
-            return (
-                f"❌ Insufficient disk space: {e}. "
-                "Please free up some disk space and try again."
-            )
+            return f"❌ Insufficient disk space: {e}. Please free up some disk space and try again."
         elif "read-only" in str(e).lower():
             return f"❌ File system is read-only: {e}. Cannot create journal files."
         else:
-            return (
-                f"❌ File system error: {e}. Please check your storage configuration."
-            )
+            return f"❌ File system error: {e}. Please check your storage configuration."
     except Exception as e:
-        return (
-            f"❌ Unexpected error creating daily file: {e}. "
-            "Please try again or contact support."
-        )
+        return f"❌ Unexpected error creating daily file: {e}. Please try again or contact support."
 
 
 @tool
-def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
+def add_timestamp_entry(content: str, target_date: str | None = None) -> str:
     """
     Add a timestamped journal entry to today's or specified date's journal file.
 
@@ -87,8 +98,7 @@ def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
 
     if not content or not content.strip():
         return (
-            "❌ Error: Cannot add empty journal entry. "
-            "Please provide some content to write about."
+            "❌ Error: Cannot add empty journal entry. Please provide some content to write about."
         )
 
     try:
@@ -120,16 +130,14 @@ def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
         elif "read-only" in str(e).lower():
             return f"❌ File system is read-only: {e}. Cannot save journal entries."
         else:
-            return (
-                f"❌ File system error: {e}. " "Entry may not have been saved properly."
-            )
+            return f"❌ File system error: {e}. Entry may not have been saved properly."
     except Exception as e:
         return f"❌ Unexpected error adding entry: {e}. Please try again."
 
 
 @tool
 def save_journal_entry_with_summary(
-    content: str, target_date: Optional[str] = None, force_summary: bool = False
+    content: str, target_date: str | None = None, force_summary: bool = False
 ) -> str:
     """
     Save a journal entry with automatic summarization for long entries.
@@ -145,10 +153,7 @@ def save_journal_entry_with_summary(
     from datetime import datetime
 
     if not content or not content.strip():
-        return (
-            "❌ Error: Cannot save empty journal entry. "
-            "Please write something to journal about."
-        )
+        return "❌ Error: Cannot save empty journal entry. Please write something to journal about."
 
     try:
         custom_date = None
@@ -181,10 +186,7 @@ def save_journal_entry_with_summary(
                     "low disk space. Consider freeing up storage."
                 )
             except Exception:
-                return (
-                    "❌ Critical: Insufficient disk space and unable to save "
-                    f"entry: {e}"
-                )
+                return f"❌ Critical: Insufficient disk space and unable to save entry: {e}"
         elif "read-only" in str(e).lower():
             return f"❌ File system is read-only: {e}. Cannot save journal entries."
         else:
@@ -198,20 +200,15 @@ def save_journal_entry_with_summary(
         # Try basic save as last resort fallback
         try:
             file_path = _add_timestamp_entry(content.strip())
-            return (
-                f"⚠️ Entry saved to {file_path} but summary generation " f"failed: {e}"
-            )
+            return f"⚠️ Entry saved to {file_path} but summary generation failed: {e}"
         except Exception:
             return (
-                f"❌ Failed to save journal entry: {e}. "
-                "Please try again or use a simpler format."
+                f"❌ Failed to save journal entry: {e}. Please try again or use a simpler format."
             )
 
 
 @tool
-def search_by_date_range(
-    start_date: Optional[str] = None, end_date: Optional[str] = None
-) -> str:
+def search_by_date_range(start_date: str | None = None, end_date: str | None = None) -> str:
     """
     Search for journal entries within a date range.
 
@@ -242,9 +239,7 @@ def search_by_date_range(
         # Format results
         result_lines = [f"📅 Found {len(results)} journal entries:"]
         for entry in results:
-            word_info = (
-                f"({entry['word_count']} words)" if entry.get("word_count") else ""
-            )
+            word_info = f"({entry['word_count']} words)" if entry.get("word_count") else ""
             result_lines.append(f"• {entry['date']} - {entry['file_path']} {word_info}")
             if entry.get("mood"):
                 result_lines.append(f"  💭 Mood: {entry['mood']}")
@@ -255,24 +250,16 @@ def search_by_date_range(
 
     except ValueError as e:
         if "date" in str(e).lower():
-            return (
-                f"❌ Invalid date format: {e}. "
-                "Please use YYYY-MM-DD format (e.g., 2024-01-15)."
-            )
+            return f"❌ Invalid date format: {e}. Please use YYYY-MM-DD format (e.g., 2024-01-15)."
         else:
             return f"❌ Invalid input: {e}"
     except OSError as e:
         if "permission" in str(e).lower() or "access" in str(e).lower():
-            return (
-                f"❌ Cannot access journal files: {e}. Please check file permissions."
-            )
+            return f"❌ Cannot access journal files: {e}. Please check file permissions."
         else:
             return f"❌ File system error during search: {e}. Please try again."
     except Exception as e:
-        return (
-            f"❌ Unexpected error during date search: {e}. "
-            "Please try again or contact support."
-        )
+        return f"❌ Unexpected error during date search: {e}. Please try again or contact support."
 
 
 @tool
@@ -323,9 +310,7 @@ def search_by_keywords(
         result_lines = [f"🔍 Found {len(results)} entries matching '{keywords}':"]
         for entry in results:
             score = entry.get("match_score", 0)
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (relevance: {score})"
-            )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']} (relevance: {score})")
             if entry.get("mood"):
                 result_lines.append(f"  💭 Mood: {entry['mood']}")
             if entry.get("topics"):
@@ -335,9 +320,7 @@ def search_by_keywords(
 
     except OSError as e:
         if "permission" in str(e).lower() or "access" in str(e).lower():
-            return (
-                f"❌ Cannot access journal files: {e}. Please check file permissions."
-            )
+            return f"❌ Cannot access journal files: {e}. Please check file permissions."
         else:
             return f"❌ File system error during keyword search: {e}. Please try again."
     except Exception as e:
@@ -357,10 +340,7 @@ def search_by_mood(mood: str, exact_match: bool = False) -> str:
         str: Formatted search results.
     """
     if not mood or not mood.strip():
-        return (
-            "❌ Error: Please specify a mood to search for "
-            "(e.g., 'happy', 'sad', 'excited')."
-        )
+        return "❌ Error: Please specify a mood to search for (e.g., 'happy', 'sad', 'excited')."
 
     try:
         results = _search_by_mood(mood.strip(), exact_match=exact_match)
@@ -388,9 +368,7 @@ def search_by_mood(mood: str, exact_match: bool = False) -> str:
 
     except OSError as e:
         if "permission" in str(e).lower() or "access" in str(e).lower():
-            return (
-                f"❌ Cannot access journal files: {e}. Please check file permissions."
-            )
+            return f"❌ Cannot access journal files: {e}. Please check file permissions."
         else:
             return f"❌ File system error during mood search: {e}. Please try again."
     except Exception as e:
@@ -415,18 +393,13 @@ def search_by_topics(topics: str, match_all: bool = False) -> str:
 
         if not results:
             match_type = "all" if match_all else "any"
-            return (
-                f"No journal entries found containing {match_type} "
-                f"of these topics: {topics}"
-            )
+            return f"No journal entries found containing {match_type} of these topics: {topics}"
 
         # Format results with scores
         result_lines = [f"Found {len(results)} entries matching topics '{topics}':"]
         for entry in results:
             score = entry.get("topic_match_score", 0)
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (score: {score})"
-            )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']} (score: {score})")
             result_lines.append(f"  Topics: {', '.join(entry.get('topics', []))}")
             if entry.get("mood"):
                 result_lines.append(f"  Mood: {entry['mood']}")
@@ -440,10 +413,10 @@ def search_by_topics(topics: str, match_all: bool = False) -> str:
 @tool
 def add_metadata_to_entry(
     file_path: str,
-    mood: Optional[str] = None,
-    keywords: Optional[str] = None,
-    topics: Optional[str] = None,
-    tags: Optional[str] = None,
+    mood: str | None = None,
+    keywords: str | None = None,
+    topics: str | None = None,
+    tags: str | None = None,
 ) -> str:
     """
     Add metadata to an existing journal entry.

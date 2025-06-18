@@ -1,4 +1,5 @@
 import os
+
 import pytest
 
 
@@ -8,9 +9,7 @@ def _import_journaling_agent():
 
     # Get the current file's directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    module_path = os.path.join(
-        current_dir, "..", "..", "src", "agents", "journaling_agent.py"
-    )
+    module_path = os.path.join(current_dir, "..", "..", "src", "agents", "journaling_agent.py")
     module_path = os.path.normpath(module_path)
 
     spec = importlib.util.spec_from_file_location("journaling_agent", module_path)

@@ -1,10 +1,9 @@
 import os
-from utils.git_repo_manager import ensure_git_repo
-from common.load_settings import load_settings
 
-DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
-)
+from common.load_settings import load_settings
+from utils.git_repo_manager import ensure_git_repo
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 settings = load_settings()
 GITHUB_TOKEN = settings["github_token"]
 

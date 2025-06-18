@@ -1,18 +1,20 @@
-import os
 import glob
+import os
+
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
+
+from common.data import DATA_DIR, refresh_data
 from common.db_utils import (
-    upsert_file_record,
-    hash_file,
+    get_all_items,
     get_file_record,
+    hash_file,
     init_db,
     mark_deleted,
-    get_all_items,
+    upsert_file_record,
 )
-from common.load_settings import load_settings
-from common.data import refresh_data, DATA_DIR
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from common.get_vector_store import get_vector_store_from_config
+from common.load_settings import load_settings
 
 settings = load_settings()
 OBSIDIAN_NOTES_PATH = settings["obsidian_notes_path"]
@@ -92,14 +94,14 @@ def run_index():
     for i in range(0, total, batch_size):
         batch = chunks[i : i + batch_size]
         vector_store.add_documents(batch)
-        print(f"Added {min(i+batch_size, total)}/{total} chunks")
+        print(f"Added {min(i + batch_size, total)}/{total} chunks")
     print("Database updated successfully!")
 
 
 def get_full_note_text(item_relative_path):
     note_path = os.path.join(DATA_DIR, OBSIDIAN_NOTES_PATH, item_relative_path)
     try:
-        with open(note_path, "r") as f:
+        with open(note_path) as f:
             return f.read()
     except Exception as e:
         return f"[Error reading note: {e}]"

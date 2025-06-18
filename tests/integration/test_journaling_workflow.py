@@ -9,15 +9,13 @@ Note: These tests are designed to work in environments where full dependencies
 may not be available, focusing on the integration patterns and workflow verification.
 """
 
-import pytest
-import tempfile
 import os
 import shutil
-from datetime import datetime, date
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import sys
+import tempfile
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -101,7 +99,7 @@ class TestJournalingIntegrationDocumentation:
         agent_file = "src/agents/journaling_agent.py"
         assert os.path.exists(agent_file)
 
-        with open(agent_file, "r") as f:
+        with open(agent_file) as f:
             content = f.read()
 
         # Verify key integration patterns
@@ -128,7 +126,7 @@ class TestJournalingIntegrationDocumentation:
         tools_file = "src/tools/journal_tools.py"
         assert os.path.exists(tools_file)
 
-        with open(tools_file, "r") as f:
+        with open(tools_file) as f:
             content = f.read()
 
         # Verify error handling patterns
@@ -152,7 +150,7 @@ class TestJournalingIntegrationDocumentation:
         """
 
         tools_file = "src/tools/journal_tools.py"
-        with open(tools_file, "r") as f:
+        with open(tools_file) as f:
             content = f.read()
 
         # Verify search functions exist
@@ -187,7 +185,7 @@ class TestJournalingIntegrationDocumentation:
         """
 
         tools_file = "src/tools/journal_tools.py"
-        with open(tools_file, "r") as f:
+        with open(tools_file) as f:
             content = f.read()
 
         # Verify file operation functions
@@ -222,7 +220,7 @@ class TestJournalingIntegrationDocumentation:
         """
 
         tools_file = "src/tools/journal_tools.py"
-        with open(tools_file, "r") as f:
+        with open(tools_file) as f:
             content = f.read()
 
         # Verify summarization functions
@@ -258,15 +256,13 @@ class TestJournalingIntegrationDocumentation:
         agents_file = "src/agents/agents.py"
         assert os.path.exists(agents_file)
 
-        with open(agents_file, "r") as f:
+        with open(agents_file) as f:
             content = f.read()
 
         # Verify registration
         assert "journaling_agent" in content, "Agent should be imported"
         assert '"journaling-agent"' in content, "Agent should be registered"
-        assert (
-            "daily journaling assistant" in content.lower()
-        ), "Should have description"
+        assert "daily journaling assistant" in content.lower(), "Should have description"
 
         print("✅ Agent is properly registered")
 
@@ -295,7 +291,7 @@ class TestJournalingWorkflowValidation:
 
         # Read the agent file to verify tool signatures
         agent_file = "src/agents/journaling_agent.py"
-        with open(agent_file, "r") as f:
+        with open(agent_file) as f:
             content = f.read()
 
         # Check for expected tool functions
@@ -310,7 +306,7 @@ class TestJournalingWorkflowValidation:
 
         for tool in expected_tools:
             assert f"def {tool}(" in content, f"Missing tool: {tool}"
-            assert f"@tool" in content, f"Tool {tool} should have @tool decorator"
+            assert "@tool" in content, f"Tool {tool} should have @tool decorator"
 
         print("✅ Tool interfaces are properly defined")
 

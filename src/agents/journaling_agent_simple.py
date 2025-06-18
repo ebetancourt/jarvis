@@ -1,27 +1,45 @@
 from datetime import datetime
-from langgraph.prebuilt import create_react_agent
+
 from langchain_core.tools import tool
-from typing import Optional, List, Dict, Any, Union
-from datetime import date
+from langgraph.prebuilt import create_react_agent
+
+from tools.journal_tools import (
+    add_metadata_to_entry as _add_metadata_to_entry,
+)
+from tools.journal_tools import (
+    add_timestamp_entry as _add_timestamp_entry,
+)
+from tools.journal_tools import (
+    count_words as _count_words,
+)
 
 # Import the underlying journal functions
 from tools.journal_tools import (
     create_daily_file as _create_daily_file,
-    add_timestamp_entry as _add_timestamp_entry,
-    save_journal_entry_with_summary as _save_journal_entry_with_summary,
-    search_by_date_range as _search_by_date_range,
-    search_by_keywords as _search_by_keywords,
-    search_by_mood as _search_by_mood,
-    search_by_topics as _search_by_topics,
-    add_metadata_to_entry as _add_metadata_to_entry,
+)
+from tools.journal_tools import (
     get_journal_metadata as _get_journal_metadata,
-    count_words as _count_words,
+)
+from tools.journal_tools import (
+    save_journal_entry_with_summary as _save_journal_entry_with_summary,
+)
+from tools.journal_tools import (
+    search_by_date_range as _search_by_date_range,
+)
+from tools.journal_tools import (
+    search_by_keywords as _search_by_keywords,
+)
+from tools.journal_tools import (
+    search_by_mood as _search_by_mood,
+)
+from tools.journal_tools import (
+    search_by_topics as _search_by_topics,
 )
 
 
 # Configure journal tools as LangGraph tools
 @tool
-def create_daily_file(target_date: Optional[str] = None) -> str:
+def create_daily_file(target_date: str | None = None) -> str:
     """
     Create a new daily journal file.
 
@@ -44,7 +62,7 @@ def create_daily_file(target_date: Optional[str] = None) -> str:
 
 
 @tool
-def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
+def add_timestamp_entry(content: str, target_date: str | None = None) -> str:
     """
     Add a timestamped journal entry to today's or specified date's journal file.
 
@@ -72,7 +90,7 @@ def add_timestamp_entry(content: str, target_date: Optional[str] = None) -> str:
 
 @tool
 def save_journal_entry_with_summary(
-    content: str, target_date: Optional[str] = None, force_summary: bool = False
+    content: str, target_date: str | None = None, force_summary: bool = False
 ) -> str:
     """
     Save a journal entry with automatic summarization for long entries.
@@ -103,9 +121,7 @@ def save_journal_entry_with_summary(
 
 
 @tool
-def search_by_date_range(
-    start_date: Optional[str] = None, end_date: Optional[str] = None
-) -> str:
+def search_by_date_range(start_date: str | None = None, end_date: str | None = None) -> str:
     """
     Search for journal entries within a date range.
 
@@ -182,9 +198,7 @@ def search_by_keywords(
         result_lines = [f"Found {len(results)} entries matching '{keywords}':"]
         for entry in results:
             score = entry.get("match_score", 0)
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (score: {score})"
-            )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']} (score: {score})")
             if entry.get("mood"):
                 result_lines.append(f"  Mood: {entry['mood']}")
 
@@ -216,9 +230,7 @@ def search_by_mood(mood: str, exact_match: bool = False) -> str:
         # Format results
         result_lines = [f"Found {len(results)} entries with mood '{mood}':"]
         for entry in results:
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (mood: {entry['mood']})"
-            )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']} (mood: {entry['mood']})")
             if entry.get("topics"):
                 result_lines.append(f"  Topics: {', '.join(entry['topics'])}")
 
@@ -252,9 +264,7 @@ def search_by_topics(topics: str, match_all: bool = False) -> str:
         result_lines = [f"Found {len(results)} entries matching topics '{topics}':"]
         for entry in results:
             score = entry.get("topic_match_score", 0)
-            result_lines.append(
-                f"• {entry['date']} - {entry['file_path']} (score: {score})"
-            )
+            result_lines.append(f"• {entry['date']} - {entry['file_path']} (score: {score})")
             result_lines.append(f"  Topics: {', '.join(entry.get('topics', []))}")
             if entry.get("mood"):
                 result_lines.append(f"  Mood: {entry['mood']}")
@@ -268,10 +278,10 @@ def search_by_topics(topics: str, match_all: bool = False) -> str:
 @tool
 def add_metadata_to_entry(
     file_path: str,
-    mood: Optional[str] = None,
-    keywords: Optional[str] = None,
-    topics: Optional[str] = None,
-    tags: Optional[str] = None,
+    mood: str | None = None,
+    keywords: str | None = None,
+    topics: str | None = None,
+    tags: str | None = None,
 ) -> str:
     """
     Add metadata to an existing journal entry.
