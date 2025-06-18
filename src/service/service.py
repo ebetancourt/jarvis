@@ -26,6 +26,7 @@ from langsmith import Client as LangsmithClient
 from agents import DEFAULT_AGENT, get_agent, get_all_agent_info
 from core import settings
 from memory import initialize_database, initialize_store
+from plugins.obsidian.route import router as obsidian_router
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -41,7 +42,6 @@ from service.utils import (
     langchain_to_chat_message,
     remove_tool_calls,
 )
-from plugins.obsidian.route import router as obsidian_router
 
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 logger = logging.getLogger(__name__)
@@ -50,11 +50,7 @@ logger = logging.getLogger(__name__)
 def verify_bearer(
     http_auth: Annotated[
         HTTPAuthorizationCredentials | None,
-        Depends(
-            HTTPBearer(
-                description="Please provide AUTH_SECRET api key.", auto_error=False
-            )
-        ),
+        Depends(HTTPBearer(description="Please provide AUTH_SECRET api key.", auto_error=False)),
     ],
 ) -> None:
     if not settings.AUTH_SECRET:
@@ -110,9 +106,7 @@ async def info() -> ServiceMetadata:
     )
 
 
-async def _handle_input(
-    user_input: UserInput, agent: Pregel
-) -> tuple[dict[str, Any], UUID]:
+async def _handle_input(user_input: UserInput, agent: Pregel) -> tuple[dict[str, Any], UUID]:
     """
     Parse user input and handle any required interrupt resumption.
     Returns kwargs for agent invocation and the run_id.
@@ -236,9 +230,7 @@ async def message_generator(
                     # special cases for using langgraph-supervisor library
                     if node == "supervisor":
                         # Get only the last AIMessage since supervisor includes all previous messages
-                        ai_messages = [
-                            msg for msg in update_messages if isinstance(msg, AIMessage)
-                        ]
+                        ai_messages = [msg for msg in update_messages if isinstance(msg, AIMessage)]
                         if ai_messages:
                             update_messages = [ai_messages[-1]]
                     if node in ("research_expert", "math_expert"):
@@ -286,10 +278,7 @@ async def message_generator(
                     yield f"data: {json.dumps({'type': 'error', 'content': 'Unexpected error'})}\n\n"
                     continue
                 # LangGraph re-sends the input message, which feels weird, so drop it
-                if (
-                    chat_message.type == "human"
-                    and chat_message.content == user_input.message
-                ):
+                if chat_message.type == "human" and chat_message.content == user_input.message:
                     continue
                 yield f"data: {json.dumps({'type': 'message', 'content': chat_message.model_dump()})}\n\n"
 
@@ -342,12 +331,8 @@ def _sse_response_example() -> dict[int | str, Any]:
     response_class=StreamingResponse,
     responses=_sse_response_example(),
 )
-@router.post(
-    "/stream", response_class=StreamingResponse, responses=_sse_response_example()
-)
-async def stream(
-    user_input: StreamInput, agent_id: str = DEFAULT_AGENT
-) -> StreamingResponse:
+@router.post("/stream", response_class=StreamingResponse, responses=_sse_response_example())
+async def stream(user_input: StreamInput, agent_id: str = DEFAULT_AGENT) -> StreamingResponse:
     """
     Stream an agent's response to a user input, including intermediate messages and tokens.
 
@@ -396,9 +381,7 @@ def history(input: ChatHistoryInput) -> ChatHistory:
             config=RunnableConfig(configurable={"thread_id": input.thread_id})
         )
         messages: list[AnyMessage] = state_snapshot.values["messages"]
-        chat_messages: list[ChatMessage] = [
-            langchain_to_chat_message(m) for m in messages
-        ]
+        chat_messages: list[ChatMessage] = [langchain_to_chat_message(m) for m in messages]
         return ChatHistory(messages=chat_messages)
     except Exception as e:
         logger.error(f"An exception occurred: {e}")

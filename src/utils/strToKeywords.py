@@ -1,6 +1,5 @@
-import nltk
-from rake_nltk import Rake
-from typing import List
+import nltk  # type: ignore
+from rake_nltk import Rake  # type: ignore
 
 nltk.download("stopwords", quiet=True)
 
@@ -9,7 +8,7 @@ nltk.download("stopwords", quiet=True)
 rake = Rake()
 
 
-def strToKeywords(text: str) -> List[str]:
+def strToKeywords(text: str) -> list[str]:
     """
     Extract keywords from a string using the RAKE algorithm.
     Args:

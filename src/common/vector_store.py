@@ -1,14 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import List
 
 
 class VectorStore(ABC):
     @abstractmethod
-    def from_documents(self, documents: List, **kwargs):
+    def from_documents(self, documents: list, **kwargs):
         pass
 
     @abstractmethod
-    def add_documents(self, documents: List, **kwargs):
+    def add_documents(self, documents: list, **kwargs):
         pass
 
     @abstractmethod

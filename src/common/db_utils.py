@@ -1,9 +1,11 @@
 import os
-import xxhash
 import sqlite3
 from datetime import datetime
-from common.load_settings import load_settings
+
+import xxhash
+
 from common.data import DATA_DIR
+from common.load_settings import load_settings
 
 settings = load_settings()
 SQLITE_DB = settings["index_tracker_sqlite_db"]

@@ -6,11 +6,12 @@ from agents.bg_task_agent.bg_task_agent import bg_task_agent
 from agents.chatbot import chatbot
 from agents.command_agent import command_agent
 from agents.interrupt_agent import interrupt_agent
+from agents.jarvis import jarvis_agent
+from agents.journaling_agent import journaling_agent
 from agents.knowledge_base_agent import kb_agent
 from agents.langgraph_supervisor_agent import langgraph_supervisor_agent
 from agents.rag_assistant import rag_assistant
 from agents.research_assistant import research_assistant
-from agents.jarvis import jarvis_agent
 from schema import AgentInfo
 
 DEFAULT_AGENT = "research-assistant"
@@ -38,12 +39,14 @@ agents: dict[str, Agent] = {
     "langgraph-supervisor-agent": Agent(
         description="A langgraph supervisor agent", graph=langgraph_supervisor_agent
     ),
-    "interrupt-agent": Agent(
-        description="An agent the uses interrupts.", graph=interrupt_agent
-    ),
+    "interrupt-agent": Agent(description="An agent the uses interrupts.", graph=interrupt_agent),
     "knowledge-base-agent": Agent(
         description="A retrieval-augmented generation agent using Amazon Bedrock Knowledge Base",
         graph=kb_agent,
+    ),
+    "journaling-agent": Agent(
+        description="A daily journaling assistant with guided prompts",
+        graph=journaling_agent,
     ),
 }
 

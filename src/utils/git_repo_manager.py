@@ -1,11 +1,8 @@
 import os
 import subprocess
-from typing import Optional
 
 
-def ensure_git_repo(
-    path: str, repo_url: str, branch: Optional[str] = None, token: Optional[str] = None
-):
+def ensure_git_repo(path: str, repo_url: str, branch: str | None = None, token: str | None = None):
     """
     Ensure a git repository exists at the given path. If not, clone it. If it exists, pull the latest changes.
     Supports private GitHub repos via SSH or HTTPS with a token.
@@ -23,9 +20,7 @@ def ensure_git_repo(
             subprocess.run(["git", "-C", path, "pull"], check=True)
             if branch:
                 subprocess.run(["git", "-C", path, "checkout", branch], check=True)
-                subprocess.run(
-                    ["git", "-C", path, "pull", "origin", branch], check=True
-                )
+                subprocess.run(["git", "-C", path, "pull", "origin", branch], check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error pulling repo: {e}")
     else:
