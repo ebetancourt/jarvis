@@ -639,20 +639,22 @@ def _create_fallback_summary(text: str, max_summary_ratio: float = 0.2) -> str:
 
 def save_journal_entry_with_summary(
     content: str,
-    custom_date: datetime | None = None,
+    custom_date: datetime | date | None = None,
     force_summary: bool = False,
     max_summary_ratio: float | None = None,
 ) -> str:
     """
     Save a journal entry with automatic summarization based on configuration.
 
-    Uses settings to determine when summarization should be applied and with what parameters.
+    Uses settings to determine when summarization should be applied and with
+    what parameters.
 
     Args:
         content: The journal entry content to save
         custom_date: Optional datetime for the entry (defaults to current time)
         force_summary: Force summarization even if below word threshold
-        max_summary_ratio: Optional custom summary ratio. If None, uses settings.JOURNALING_SUMMARY_RATIO
+        max_summary_ratio: Optional custom summary ratio. If None, uses
+        settings.JOURNALING_SUMMARY_RATIO
 
     Returns:
         str: Status message indicating what was saved and any summarization performed
@@ -666,6 +668,19 @@ def save_journal_entry_with_summary(
 
     if custom_date is None:
         custom_date = datetime.now()
+
+    # Extract date and time components properly
+    if isinstance(custom_date, datetime):
+        entry_date = custom_date.date()
+        entry_time = custom_date.time()
+    elif isinstance(custom_date, date):
+        entry_date = custom_date
+        entry_time = datetime.now().time()
+    else:
+        # Fallback to current datetime
+        now = datetime.now()
+        entry_date = now.date()
+        entry_time = now.time()
 
     # Check if summarization is enabled and if content meets criteria
     should_summarize = settings.JOURNALING_ENABLE_SUMMARIZATION and (
@@ -693,7 +708,7 @@ def save_journal_entry_with_summary(
 
             # Save the entry with summary
             file_path = add_timestamp_entry(
-                entry_content_with_summary, custom_date.date(), custom_date.time()
+                entry_content_with_summary, entry_date, entry_time
             )
 
             return (

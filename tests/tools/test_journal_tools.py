@@ -1262,8 +1262,7 @@ class TestIntegratedWorkflow:
                     entry_100_words,
                     test_date,
                     test_time,
-                    word_limit=50,
-                    summary_ratio=0.1,
+                    max_summary_ratio=0.1,
                 )
 
                 # Should indicate summary was needed due to custom limit
