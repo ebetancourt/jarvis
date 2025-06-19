@@ -5,24 +5,24 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 ## Relevant Files
 
 - `src/agents/weekly_review_agent.py` - Main agent implementation with conversational interface and review logic.
-- `src/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
+- `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
 - `src/tools/todoist_tools.py` - Todoist API integration tools for fetching and updating tasks/projects.
-- `src/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
+- `tests/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
 - `src/tools/calendar_tools.py` - Google Calendar multi-account integration tools.
-- `src/tools/calendar_tools.test.py` - Unit tests for calendar integration.
+- `tests/tools/calendar_tools.test.py` - Unit tests for calendar integration.
 - `src/tools/weekly_review_tools.py` - Core weekly review analysis and processing tools.
-- `src/tools/weekly_review_tools.test.py` - Unit tests for weekly review tools.
+- `tests/tools/weekly_review_tools.test.py` - Unit tests for weekly review tools.
 - `src/schema/weekly_review_models.py` - Data models for weekly reviews, OAuth configs, and calendar settings.
 - `src/common/oauth_manager.py` - Multi-service OAuth management utilities (Todoist + Google Calendar).
-- `src/common/oauth_manager.test.py` - Unit tests for OAuth management.
+- `tests/common/oauth_manager.test.py` - Unit tests for OAuth management.
 - `streamlit_app.py` - Enhanced Streamlit app with unified OAuth configuration interface (modify existing).
 - `src/memory/weekly_reviews.py` - Database operations for storing/retrieving weekly review data.
-- `src/memory/weekly_reviews.test.py` - Unit tests for weekly review database operations.
+- `tests/memory/weekly_reviews.test.py` - Unit tests for weekly review database operations.
 - `requirements.txt` - Updated dependencies for Todoist API, Google Calendar API, additional OAuth libraries.
 
 ### Notes
 
-- Unit tests should be placed alongside the code files they are testing in the same directory.
+- Unit tests should be placed in the tests directory following the directory structure of the project in src (tests for functions in src/tools/foo.py should be in tests/tools/foo.test.py).
 - Use `npx jest [optional/path/to/test/file]` or `pytest [optional/path/to/test/file]` to run tests (depending on project setup).
 - OAuth tokens and API credentials should be stored securely and never committed to version control.
 - The agent should integrate with existing journaling agent tools from `src/tools/journal_tools.py`.
@@ -30,7 +30,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 ## Tasks
 
 - [ ] 1.0 Create Weekly Review Agent Infrastructure
-  - [ ] 1.1 Create `src/agents/weekly_review_agent.py` with basic LangGraph agent structure
+  - [x] 1.1 Create `src/agents/weekly_review_agent.py` with basic LangGraph agent structure
   - [ ] 1.2 Add weekly review agent to `src/agents/agents.py` registry with proper description
   - [ ] 1.3 Create agent prompt template that incorporates GTD methodology and areas of responsibility
   - [ ] 1.4 Implement basic conversational interface with memory and context handling (FR-026, FR-028)
