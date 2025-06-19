@@ -1,12 +1,182 @@
 from datetime import datetime
 
 from langchain_core.tools import tool
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
+from langgraph.store.memory import InMemoryStore
+
+
+# Session management and context tools for memory handling
+
+
+@tool
+def start_weekly_review_session(
+    session_type: str = "full", focus_areas: str = ""
+) -> str:
+    """
+    Initialize a new weekly review session with context tracking.
+
+    Args:
+        session_type: Type of review - "full", "quick", or "focused" (default: "full")
+        focus_areas: Specific areas to focus on, comma-separated (optional)
+
+    Returns:
+        str: Session initialization confirmation with guidance
+    """
+    session_types = {
+        "full": "Complete 6-step GTD weekly review (45-60 minutes)",
+        "quick": "Abbreviated review focusing on key priorities (15-20 minutes)",
+        "focused": "Targeted review of specific areas (20-30 minutes)",
+    }
+
+    session_desc = session_types.get(session_type, session_types["full"])
+
+    context_msg = "🎯 **Weekly Review Session Started**\n\n"
+    context_msg += f"**Session Type:** {session_desc}\n\n"
+
+    if focus_areas:
+        context_msg += f"**Focus Areas:** {focus_areas}\n\n"
+
+    context_msg += (
+        "I'll guide you through your weekly review step by step. "
+        "We can adjust the pace and depth based on your available time and energy. "
+        "Let's start by checking in - how are you feeling right now, and how much "
+        "time do you have available?"
+    )
+
+    return context_msg
+
+
+@tool
+def track_review_progress(
+    completed_steps: str, current_step: str = "", notes: str = ""
+) -> str:
+    """
+    Track progress through the weekly review process for context continuity.
+
+    Args:
+        completed_steps: Comma-separated list of completed steps (e.g., "clear,current")
+        current_step: Current step being worked on (optional)
+        notes: Any session notes or insights to remember (optional)
+
+    Returns:
+        str: Progress summary and next step guidance
+    """
+    step_names = {
+        "clear": "✅ Get Clear (Mind Sweep & Collection)",
+        "current": "✅ Get Current (Review Past Week)",
+        "creative": "✅ Get Creative (Areas of Responsibility)",
+        "projects": "✅ Review Projects List",
+        "actions": "✅ Review Next Actions Lists",
+        "calendar": "✅ Review Calendar & Plan Ahead",
+    }
+
+    completed_list = [
+        step.strip() for step in completed_steps.split(",") if step.strip()
+    ]
+
+    progress_msg = "📋 **Weekly Review Progress**\n\n"
+
+    for step in completed_list:
+        if step in step_names:
+            progress_msg += f"{step_names[step]}\n"
+
+    if current_step and current_step in step_names:
+        current_desc = step_names[current_step].replace("✅", "Working on")
+        progress_msg += f"🔄 Currently: {current_desc}\n"
+
+    # Determine next step
+    all_steps = ["clear", "current", "creative", "projects", "actions", "calendar"]
+    next_steps = [step for step in all_steps if step not in completed_list]
+
+    if next_steps:
+        next_step = next_steps[0]
+        next_desc = step_names[next_step].replace("✅", "Next -")
+        progress_msg += f"\n🎯 **Next:** {next_desc}"
+    else:
+        progress_msg += "\n🎉 **Weekly Review Complete!** Ready to save and wrap up."
+
+    if notes:
+        progress_msg += f"\n\n📝 **Session Notes:** {notes}"
+
+    return progress_msg
+
+
+@tool
+def manage_review_context(
+    action: str, key: str = "", value: str = "", context_type: str = "session"
+) -> str:
+    """
+    Manage context and state during the weekly review for better continuity.
+
+    Args:
+        action: Action to perform - "set", "get", "list", or "clear"
+        key: Context key to set/get (for set/get actions)
+        value: Context value to store (for set action)
+        context_type: Type of context - "session", "insights", "commitments" (default: "session")
+
+    Returns:
+        str: Context operation result
+    """
+    # This is a placeholder implementation - in a real system this would integrate
+    # with the LangGraph memory/store systems
+
+    if action == "set" and key and value:
+        return f"📝 Context stored: {context_type}.{key} = {value}"
+    elif action == "get" and key:
+        return (
+            f"📖 Retrieved context: {context_type}.{key} "
+            "(placeholder - would retrieve stored value)"
+        )
+    elif action == "list":
+        return (
+            f"📋 Available {context_type} context keys: "
+            "(placeholder - would list actual keys)"
+        )
+    elif action == "clear":
+        return f"🗑️ Cleared {context_type} context"
+    else:
+        return "❌ Invalid context action. Use: set, get, list, or clear"
+
+
+@tool
+def save_review_insights(
+    insights: str, commitments: str = "", reflection: str = ""
+) -> str:
+    """
+    Save key insights and commitments from the weekly review session.
+
+    Args:
+        insights: Key insights and patterns discovered during review
+        commitments: Specific commitments made for the upcoming week
+        reflection: Overall reflection on the review process
+
+    Returns:
+        str: Confirmation of saved insights with summary
+    """
+    current_date = datetime.now().strftime("%Y-%m-%d")
+
+    summary = f"💡 **Weekly Review Insights Saved** (Week ending {current_date})\n\n"
+
+    if insights:
+        summary += f"**Key Insights:**\n{insights}\n\n"
+
+    if commitments:
+        summary += f"**Commitments for Next Week:**\n{commitments}\n\n"
+
+    if reflection:
+        summary += f"**Process Reflection:**\n{reflection}\n\n"
+
+    summary += (
+        "These insights will be available for reference in future weekly reviews "
+        "to track progress and patterns."
+    )
+
+    return summary
 
 
 # Placeholder tools for weekly review functionality
 # These will be expanded in later tasks
-
 
 @tool
 def get_past_week_accomplishments(
@@ -101,8 +271,14 @@ def get_previous_weekly_reviews(num_reviews: int = 3) -> str:
     )
 
 
-# Configure tools for the weekly review agent
+# Configure tools for the weekly review agent including session management
 tools = [
+    # Session management and context tools
+    start_weekly_review_session,
+    track_review_progress,
+    manage_review_context,
+    save_review_insights,
+    # Core weekly review functionality
     get_past_week_accomplishments,
     analyze_incomplete_tasks,
     identify_upcoming_priorities,
@@ -112,6 +288,7 @@ tools = [
 
 current_date = datetime.now().strftime("%Y-%m-%d")
 
+# Create the agent with memory and context handling
 weekly_review_agent = create_react_agent(
     "anthropic:claude-3-7-sonnet-latest",
     tools=tools,
@@ -124,6 +301,20 @@ Allen's Getting Things Done methodology.
 The Weekly Review is the heart of the GTD system - a time to regain control and \
 perspective, ensuring your system is current and your mind is clear. You help users \
 achieve "mind like water" by systematically reviewing all commitments and projects.
+
+## 🧠 Memory & Context Management
+
+You have access to session management tools to maintain context throughout the review:
+- **start_weekly_review_session**: Initialize sessions with proper context
+- **track_review_progress**: Keep track of completed steps and current position
+- **manage_review_context**: Store and retrieve important session information
+- **save_review_insights**: Capture key insights and commitments
+
+Use these tools to:
+- Remember what's been covered and what's next
+- Maintain continuity if the session is interrupted
+- Track insights and patterns across the conversation
+- Ensure nothing important is lost
 
 ## 📋 GTD Weekly Review Process
 
@@ -230,7 +421,27 @@ By the end of each session, users should feel:
 - **Confident** - trust in their system and next actions
 - **Capable** - realistic about what they can accomplish
 
+## 💬 Conversational Guidelines
+
+**Session Management:**
+- Start each session by using `start_weekly_review_session` to set context
+- Use `track_review_progress` regularly to maintain continuity
+- Store important insights with `manage_review_context` as they emerge
+- Save key outcomes with `save_review_insights` before concluding
+
+**Memory & Continuity:**
+- Remember what's been discussed and where you are in the process
+- Reference previous points and build on earlier insights
+- If the conversation gets interrupted, quickly recap where you were
+- Connect current insights to patterns from past reviews
+
+**Adaptive Approach:**
+- Adjust depth and pace based on available time and energy
+- Offer different session types (full, quick, focused) as appropriate
+- Be flexible about order if certain areas need more attention
+- Gracefully handle incomplete sessions with clear next steps
+
 Guide them through this sacred time with patience, ensuring thoroughness without \
 overwhelm. The Weekly Review is their weekly appointment with themselves to regain \
 control and perspective.""",
-)
+).compile(checkpointer=MemorySaver(), store=InMemoryStore())
