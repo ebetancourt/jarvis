@@ -360,6 +360,90 @@ def test_google_connection(account_email: str) -> bool:
     return False
 
 
+def refresh_google_account(google_user_id: str) -> bool:
+    """Refresh tokens for a Google account."""
+    with st.spinner("Refreshing Google account..."):
+        success = oauth_manager.refresh_account_token("google", google_user_id)
+        if success:
+            st.success("✅ Google account refreshed successfully!")
+            return True
+        else:
+            st.error("❌ Failed to refresh Google account. May need to reconnect.")
+            return False
+
+
+def refresh_todoist_account() -> bool:
+    """Refresh tokens for Todoist account."""
+    user_id = get_or_create_user_id()
+    with st.spinner("Refreshing Todoist account..."):
+        success = oauth_manager.refresh_account_token("todoist", user_id)
+        if success:
+            st.success("✅ Todoist account refreshed successfully!")
+            return True
+        else:
+            st.error("❌ Failed to refresh Todoist account. May need to reconnect.")
+            return False
+
+
+def get_account_health_display(service: str, user_id: str) -> Dict[str, Any]:
+    """Get account health information for display."""
+    health = oauth_manager.get_account_health(service, user_id)
+
+    # Add display-friendly information
+    status_icons = {
+        "healthy": "🟢",
+        "expiring_soon": "🟡",
+        "expired_refreshable": "🟠",
+        "expired": "🔴",
+        "invalid": "🔴",
+        "disconnected": "⚫",
+        "unknown": "⚪",
+    }
+
+    health["icon"] = status_icons.get(health["status"], "⚪")
+
+    if health.get("expires_in"):
+        expires_in = health["expires_in"]
+        if expires_in > 86400:  # More than 1 day
+            health["expires_display"] = f"{int(expires_in/86400)} days"
+        elif expires_in > 3600:  # More than 1 hour
+            health["expires_display"] = f"{int(expires_in/3600)} hours"
+        elif expires_in > 60:  # More than 1 minute
+            health["expires_display"] = f"{int(expires_in/60)} minutes"
+        else:
+            health["expires_display"] = "Soon"
+
+    return health
+
+
+def show_service_summary(service: str):
+    """Display service summary information."""
+    summary = oauth_manager.get_service_summary(service)
+
+    service_name = service.title()
+    total = summary["total_accounts"]
+    healthy = summary["healthy_accounts"]
+
+    if total == 0:
+        st.info(f"No {service_name} accounts connected")
+        return
+
+    status_color = "🟢" if summary["service_status"] == "healthy" else "🟡"
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Accounts", total)
+    with col2:
+        st.metric(
+            "Healthy", healthy, delta=None if healthy == total else f"-{total-healthy}"
+        )
+    with col3:
+        st.write(f"**Status:** {status_color} {summary['service_status'].title()}")
+
+    if summary["expired_accounts"] > 0:
+        st.warning(f"⚠️ {summary['expired_accounts']} account(s) need attention")
+
+
 def fetch_google_calendars(google_user_id: str) -> Optional[list[Dict[str, Any]]]:
     """Fetch calendars for a specific Google account."""
     # Get valid token
@@ -546,19 +630,47 @@ async def main() -> None:
 
             todoist_status = st.session_state.oauth_status["todoist"]
             if todoist_status["connected"]:
-                st.success(f"✅ Connected as: {todoist_status['user_email']}")
-                col1, col2 = st.columns(2)
+                # Get health information
+                user_id = get_or_create_user_id()
+                health = get_account_health_display("todoist", user_id)
+
+                # Display status with health indicator
+                st.success(
+                    f"{health['icon']} Connected as: {todoist_status['user_email']}"
+                )
+                st.caption(f"Status: {health['message']}")
+
+                if health.get("expires_display"):
+                    st.caption(f"Token expires in: {health['expires_display']}")
+
+                # Action buttons
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("🔄 Test Connection", key="todoist_refresh"):
+                    if st.button("🔄 Test", key="todoist_test"):
                         test_todoist_connection()
                 with col2:
-                    if st.button("❌ Disconnect", key="todoist_disconnect"):
+                    if st.button("🔃 Refresh", key="todoist_refresh"):
+                        if refresh_todoist_account():
+                            st.rerun()
+                with col3:
+                    if st.button("❌ Remove", key="todoist_disconnect"):
                         disconnect_todoist()
                         st.rerun()
+
+                # Show warning if token needs attention
+                if health["status"] in ["expired", "expiring_soon", "invalid"]:
+                    if health["can_refresh"]:
+                        st.warning("⚠️ Token needs refresh")
+                    else:
+                        st.error("🔴 Token expired - reconnection required")
             else:
                 st.warning("⚠️ Not connected to Todoist")
                 if st.button("🔗 Connect Todoist Account", key="todoist_connect"):
                     start_todoist_oauth()
+
+            # Show Todoist service summary
+            if st.button("📊 Show Todoist Details", key="todoist_summary"):
+                show_service_summary("todoist")
 
             st.divider()
 
@@ -673,6 +785,10 @@ async def main() -> None:
                 if st.button("🔗 Connect Google Account", key="google_connect"):
                     start_google_oauth()
 
+            # Show Google service summary
+            if st.button("📊 Show Google Details", key="google_summary"):
+                show_service_summary("google")
+
             st.divider()
 
             # OAuth Status Summary
@@ -685,17 +801,53 @@ async def main() -> None:
             if google_accounts:
                 integrations_connected += 1
 
-            if integrations_connected == 0:
-                st.error("❌ No integrations configured")
-                st.caption("Weekly reviews will use manual reflection methods")
-            elif integrations_connected == total_integrations:
-                st.success("🎉 All integrations connected!")
-                st.caption("Weekly reviews will have full data access")
-            else:
-                st.warning(
-                    f"⚠️ {integrations_connected}/{total_integrations} integrations connected"
-                )
-                st.caption("Weekly reviews will use available data + manual methods")
+            # Overall status display
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                if integrations_connected == 0:
+                    st.error("❌ No integrations configured")
+                    st.caption("Weekly reviews will use manual reflection methods")
+                elif integrations_connected == total_integrations:
+                    st.success("🎉 All integrations connected!")
+                    st.caption("Weekly reviews will have full data access")
+                else:
+                    st.warning(
+                        f"⚠️ {integrations_connected}/{total_integrations} "
+                        "integrations connected"
+                    )
+                    st.caption(
+                        "Weekly reviews will use available data + manual methods"
+                    )
+
+            with col2:
+                # Account management actions
+                if st.button("🔄 Refresh All", key="refresh_all_accounts"):
+                    refresh_count = 0
+                    if todoist_status["connected"]:
+                        if refresh_todoist_account():
+                            refresh_count += 1
+
+                    for account in google_accounts:
+                        if refresh_google_account(account["user_id"]):
+                            refresh_count += 1
+
+                    if refresh_count > 0:
+                        st.success(f"✅ Refreshed {refresh_count} account(s)")
+                        st.rerun()
+                    else:
+                        st.error("❌ No accounts could be refreshed")
+
+            # Service health overview
+            if integrations_connected > 0:
+                with st.expander("🔍 Service Health Details"):
+                    if todoist_status["connected"]:
+                        st.write("**Todoist Service:**")
+                        show_service_summary("todoist")
+                        st.divider()
+
+                    if google_accounts:
+                        st.write("**Google Calendar Service:**")
+                        show_service_summary("google")
 
             # Test Connection Button
             if integrations_connected > 0:

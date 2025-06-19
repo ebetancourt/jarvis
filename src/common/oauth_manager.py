@@ -199,9 +199,121 @@ class OAuthManager:
                     "email": token.user_info.get("email", "Unknown"),
                     "name": token.user_info.get("name", "Unknown"),
                     "is_valid": self.is_token_valid(token),
+                    "connected_at": self._get_connection_time(service, user_id),
+                    "last_used": self._get_last_used_time(service, user_id),
+                    "has_refresh_token": bool(token.refresh_token),
+                    "expires_at": token.expires_at,
+                    "token_type": token.token_type,
+                    "scope": token.scope,
                 }
                 accounts.append(account)
         return accounts
+
+    def _get_connection_time(self, service: str, user_id: str) -> Optional[float]:
+        """Get when an account was first connected."""
+        # For now, we'll use a simple approach. In production, you might want
+        # to store connection timestamps separately
+        if service in self._tokens and user_id in self._tokens[service]:
+            # Fallback to current time if no stored timestamp
+            return time.time()
+        return None
+
+    def _get_last_used_time(self, service: str, user_id: str) -> Optional[float]:
+        """Get when an account was last used."""
+        # This could be enhanced to track actual API usage
+        token = self.get_token(service, user_id)
+        if token and token.expires_at:
+            # Estimate last use based on token age
+            return token.expires_at - 3600  # Assume 1 hour before expiry
+        return None
+
+    def refresh_account_token(self, service: str, user_id: str) -> bool:
+        """Manually refresh a token for an account."""
+        token = self.get_token(service, user_id)
+        if not token or not token.refresh_token:
+            return False
+
+        refreshed_token = None
+        if service == "google":
+            refreshed_token = self.refresh_google_token(token.refresh_token)
+        elif service == "todoist":
+            # Todoist doesn't require refresh tokens - just validate current token
+            refreshed_token = token
+
+        if refreshed_token:
+            self.store_token(service, user_id, refreshed_token)
+            return True
+
+        return False
+
+    def get_account_health(self, service: str, user_id: str) -> Dict[str, Any]:
+        """Get health status for an account."""
+        token = self.get_token(service, user_id)
+        if not token:
+            return {
+                "status": "disconnected",
+                "message": "No token found",
+                "can_refresh": False,
+                "needs_reauth": True,
+            }
+
+        health = {
+            "status": "unknown",
+            "message": "",
+            "can_refresh": bool(token.refresh_token),
+            "needs_reauth": False,
+            "expires_in": None,
+        }
+
+        if token.expires_at:
+            expires_in = token.expires_at - time.time()
+            health["expires_in"] = expires_in
+
+            if expires_in <= 0:
+                if token.refresh_token:
+                    health["status"] = "expired_refreshable"
+                    health["message"] = "Token expired but can be refreshed"
+                else:
+                    health["status"] = "expired"
+                    health["message"] = "Token expired, requires re-authentication"
+                    health["needs_reauth"] = True
+            elif expires_in < 3600:  # Less than 1 hour
+                health["status"] = "expiring_soon"
+                health["message"] = f"Token expires in {int(expires_in/60)} minutes"
+            else:
+                health["status"] = "healthy"
+                health["message"] = "Token is valid"
+        else:
+            # Token without expiration (like some service tokens)
+            if self.is_token_valid(token):
+                health["status"] = "healthy"
+                health["message"] = "Token is valid"
+            else:
+                health["status"] = "invalid"
+                health["message"] = "Token appears to be invalid"
+                health["needs_reauth"] = True
+
+        return health
+
+    def get_service_summary(self, service: str) -> Dict[str, Any]:
+        """Get summary statistics for a service."""
+        accounts = self.get_user_accounts(service)
+
+        total_accounts = len(accounts)
+        healthy_accounts = sum(1 for acc in accounts if acc["is_valid"])
+        expired_accounts = total_accounts - healthy_accounts
+
+        with_refresh = sum(1 for acc in accounts if acc["has_refresh_token"])
+
+        return {
+            "total_accounts": total_accounts,
+            "healthy_accounts": healthy_accounts,
+            "expired_accounts": expired_accounts,
+            "accounts_with_refresh": with_refresh,
+            "service_status": (
+                "healthy" if healthy_accounts == total_accounts else "degraded"
+            ),
+        }
 
     def store_calendar_preferences(
         self, user_id: str, calendars: list[Dict[str, Any]]
