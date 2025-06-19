@@ -137,6 +137,123 @@ async def main() -> None:
             # Display user ID (for debugging or user information)
             st.text_input("User ID (read-only)", value=user_id, disabled=True)
 
+        # OAuth Configuration Section for Weekly Review Agent
+        with st.popover(
+            ":material/sync: OAuth Configuration", use_container_width=True
+        ):
+            st.subheader("🔗 External Integrations")
+            st.caption("Configure OAuth connections for enhanced weekly reviews")
+
+            # Initialize OAuth status in session state if not exists
+            if "oauth_status" not in st.session_state:
+                st.session_state.oauth_status = {
+                    "todoist": {"connected": False, "user_email": None},
+                    "google_accounts": [],  # List of connected Google accounts
+                }
+
+            # Todoist Configuration Section
+            st.write("### 📋 Todoist Integration")
+
+            todoist_status = st.session_state.oauth_status["todoist"]
+            if todoist_status["connected"]:
+                st.success(f"✅ Connected as: {todoist_status['user_email']}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Refresh Connection", key="todoist_refresh"):
+                        # Placeholder for refresh logic
+                        st.info("Todoist connection refresh - to be implemented")
+                with col2:
+                    if st.button("❌ Disconnect", key="todoist_disconnect"):
+                        # Placeholder for disconnect logic
+                        st.session_state.oauth_status["todoist"] = {
+                            "connected": False,
+                            "user_email": None,
+                        }
+                        st.rerun()
+            else:
+                st.warning("⚠️ Not connected to Todoist")
+                if st.button("🔗 Connect Todoist Account", key="todoist_connect"):
+                    # Placeholder for OAuth flow
+                    st.info("Todoist OAuth flow - to be implemented in task 2.2")
+
+            st.divider()
+
+            # Google Calendar Configuration Section
+            st.write("### 📅 Google Calendar Integration")
+
+            google_accounts = st.session_state.oauth_status["google_accounts"]
+            if google_accounts:
+                st.success(f"✅ {len(google_accounts)} Google account(s) connected")
+
+                for i, account in enumerate(google_accounts):
+                    with st.expander(f"📧 {account['email']}", expanded=False):
+                        st.write(f"**Account:** {account['email']}")
+                        if account.get("calendars"):
+                            selected_calendars = len(
+                                [
+                                    cal
+                                    for cal in account["calendars"]
+                                    if cal.get("enabled", True)
+                                ]
+                            )
+                            total_calendars = len(account["calendars"])
+                            st.write(
+                                f"**Calendars:** {selected_calendars}/{total_calendars} enabled"
+                            )
+                        else:
+                            st.write("**Calendars:** Loading...")
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if st.button("⚙️ Configure", key=f"google_config_{i}"):
+                                st.info(
+                                    "Google calendar configuration - to be implemented"
+                                )
+                        with col2:
+                            if st.button("🔄 Refresh", key=f"google_refresh_{i}"):
+                                st.info("Google token refresh - to be implemented")
+                        with col3:
+                            if st.button("❌ Remove", key=f"google_remove_{i}"):
+                                st.session_state.oauth_status["google_accounts"].pop(i)
+                                st.rerun()
+
+                if st.button("➕ Add Another Google Account", key="google_add_another"):
+                    st.info("Additional Google account OAuth - to be implemented")
+            else:
+                st.warning("⚠️ No Google accounts connected")
+                if st.button("🔗 Connect Google Account", key="google_connect"):
+                    # Placeholder for OAuth flow
+                    st.info("Google OAuth flow - to be implemented in task 2.3")
+
+            st.divider()
+
+            # OAuth Status Summary
+            st.write("### 📊 Integration Status")
+            integrations_connected = 0
+            total_integrations = 2
+
+            if todoist_status["connected"]:
+                integrations_connected += 1
+            if google_accounts:
+                integrations_connected += 1
+
+            if integrations_connected == 0:
+                st.error("❌ No integrations configured")
+                st.caption("Weekly reviews will use manual reflection methods")
+            elif integrations_connected == total_integrations:
+                st.success("🎉 All integrations connected!")
+                st.caption("Weekly reviews will have full data access")
+            else:
+                st.warning(
+                    f"⚠️ {integrations_connected}/{total_integrations} integrations connected"
+                )
+                st.caption("Weekly reviews will use available data + manual methods")
+
+            # Test Connection Button
+            if integrations_connected > 0:
+                if st.button("🧪 Test Connections", key="test_connections"):
+                    st.info("Connection testing - to be implemented")
+
         @st.dialog("Architecture")
         def architecture_dialog() -> None:
             st.image(

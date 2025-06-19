@@ -6,6 +6,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 
 - `src/agents/weekly_review_agent.py` - Main agent implementation with GTD-structured conversational interface, comprehensive areas of responsibility, David Allen's 6-step weekly review process, memory/context handling with session management tools, and graceful sparse data handling with adaptive review approaches.
 - `src/agents/agents.py` - Agent registry with weekly review agent added as "weekly-review-agent".
+- `src/streamlit_app.py` - Enhanced Streamlit app with OAuth configuration interface for Todoist and Google Calendar integrations in sidebar popover.
 - `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
 - `src/tools/todoist_tools.py` - Todoist API integration tools for fetching and updating tasks/projects.
 - `tests/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
@@ -16,7 +17,6 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - `src/schema/weekly_review_models.py` - Data models for weekly reviews, OAuth configs, and calendar settings.
 - `src/common/oauth_manager.py` - Multi-service OAuth management utilities (Todoist + Google Calendar).
 - `tests/common/oauth_manager.test.py` - Unit tests for OAuth management.
-- `streamlit_app.py` - Enhanced Streamlit app with unified OAuth configuration interface (modify existing).
 - `src/memory/weekly_reviews.py` - Database operations for storing/retrieving weekly review data.
 - `tests/memory/weekly_reviews.test.py` - Unit tests for weekly review database operations.
 - `requirements.txt` - Updated dependencies for Todoist API, Google Calendar API, additional OAuth libraries.
@@ -38,7 +38,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 1.5 Add graceful handling for sparse data scenarios (FR-027)
 
 - [ ] 2.0 Build Streamlit OAuth Configuration Interface
-  - [ ] 2.1 Create OAuth configuration page/section in existing `streamlit_app.py` (FR-010)
+  - [x] 2.1 Create OAuth configuration page/section in existing `streamlit_app.py` (FR-010)
   - [ ] 2.2 Implement Todoist OAuth authentication flow and token management
   - [ ] 2.3 Implement Google account authentication flow with multiple account support
   - [ ] 2.4 Build calendar selection interface for each connected Google account (FR-009)
