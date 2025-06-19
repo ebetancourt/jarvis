@@ -11,6 +11,12 @@ from pydantic import ValidationError
 from client import AgentClient, AgentClientError
 from schema import ChatHistory, ChatMessage
 from schema.task_data import TaskData, TaskDataStatus
+from common.oauth_manager import (
+    oauth_manager,
+    TodoistOAuth,
+    get_todoist_config,
+    OAuthToken,
+)
 
 # A Streamlit app for interacting with the langgraph agent via a simple chat interface.
 # The app has three main functions which are all run async:
@@ -52,6 +58,155 @@ def get_or_create_user_id() -> str:
     return user_id
 
 
+def handle_oauth_callback():
+    """Handle OAuth callback for Todoist."""
+    # Check for OAuth callback parameters
+    if "code" in st.query_params and "state" in st.query_params:
+        code = st.query_params["code"]
+        state = st.query_params["state"]
+
+        # Verify state matches what we stored
+        if "oauth_state" in st.session_state and st.session_state.oauth_state == state:
+            # Get Todoist config
+            todoist_config = get_todoist_config()
+            if todoist_config:
+                # Initialize OAuth handler
+                todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
+
+                # Exchange code for token
+                token = todoist_oauth.exchange_code_for_token(code, state)
+
+                if token:
+                    # Store token for current user
+                    user_id = get_or_create_user_id()
+                    oauth_manager.store_token("todoist", user_id, token)
+
+                    # Update session state
+                    st.session_state.oauth_status["todoist"] = {
+                        "connected": True,
+                        "user_email": (
+                            token.user_info.get("email")
+                            if token.user_info
+                            else "Unknown"
+                        ),
+                    }
+
+                    # Clear OAuth state and URL params
+                    del st.session_state.oauth_state
+                    st.query_params.clear()
+
+                    st.success("✅ Successfully connected to Todoist!")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to connect to Todoist. Please try again.")
+            else:
+                st.error(
+                    "❌ Todoist OAuth configuration missing. Please check environment variables."
+                )
+        else:
+            st.error("❌ Invalid OAuth state. Please try again.")
+
+
+def load_oauth_status(user_id: str):
+    """Load OAuth status from stored tokens."""
+    if "oauth_status" not in st.session_state:
+        st.session_state.oauth_status = {
+            "todoist": {"connected": False, "user_email": None},
+            "google_accounts": [],
+        }
+
+    # Check if we have a valid Todoist token
+    todoist_token = oauth_manager.get_valid_token("todoist", user_id)
+    if todoist_token:
+        st.session_state.oauth_status["todoist"] = {
+            "connected": True,
+            "user_email": (
+                todoist_token.user_info.get("email")
+                if todoist_token.user_info
+                else "Connected"
+            ),
+        }
+    else:
+        st.session_state.oauth_status["todoist"] = {
+            "connected": False,
+            "user_email": None,
+        }
+
+
+def start_todoist_oauth():
+    """Start the Todoist OAuth flow."""
+    todoist_config = get_todoist_config()
+    if not todoist_config:
+        st.error(
+            "❌ Todoist OAuth configuration missing. Please set TODOIST_CLIENT_ID and TODOIST_CLIENT_SECRET environment variables."
+        )
+        return
+
+    # Initialize OAuth handler
+    todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
+
+    # Generate authorization URL
+    auth_url, state = todoist_oauth.get_authorization_url()
+
+    # Store state for verification
+    st.session_state.oauth_state = state
+
+    # Redirect to authorization URL
+    st.markdown(
+        f'<a href="{auth_url}" target="_self">Click here to authorize Todoist access</a>',
+        unsafe_allow_html=True,
+    )
+    st.info(
+        "You will be redirected to Todoist to authorize access. Please complete the authorization and return here."
+    )
+
+
+def disconnect_todoist():
+    """Disconnect Todoist account."""
+    user_id = get_or_create_user_id()
+
+    # Get token to revoke it
+    token = oauth_manager.get_token("todoist", user_id)
+    if token:
+        # Try to revoke the token
+        todoist_config = get_todoist_config()
+        if todoist_config:
+            todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
+            todoist_oauth.revoke_token(token)
+
+    # Remove token from storage
+    oauth_manager.remove_token("todoist", user_id)
+
+    # Update session state
+    st.session_state.oauth_status["todoist"] = {"connected": False, "user_email": None}
+
+    st.success("✅ Disconnected from Todoist")
+
+
+def test_todoist_connection():
+    """Test the Todoist connection."""
+    user_id = get_or_create_user_id()
+    token = oauth_manager.get_valid_token("todoist", user_id)
+
+    if not token:
+        st.error("❌ No valid Todoist token found")
+        return False
+
+    # Test the token
+    todoist_config = get_todoist_config()
+    if todoist_config:
+        todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
+        if todoist_oauth.test_token(token):
+            st.success("✅ Todoist connection is working!")
+            return True
+        else:
+            st.error("❌ Todoist connection failed")
+            return False
+
+    st.error("❌ Todoist configuration missing")
+    return False
+
+
 async def main() -> None:
     st.set_page_config(
         page_title=APP_TITLE,
@@ -78,6 +233,12 @@ async def main() -> None:
 
     # Get or create user ID
     user_id = get_or_create_user_id()
+
+    # Handle OAuth callback if present
+    handle_oauth_callback()
+
+    # Load OAuth status from stored tokens
+    load_oauth_status(user_id)
 
     if "agent_client" not in st.session_state:
         load_dotenv()
@@ -144,12 +305,7 @@ async def main() -> None:
             st.subheader("🔗 External Integrations")
             st.caption("Configure OAuth connections for enhanced weekly reviews")
 
-            # Initialize OAuth status in session state if not exists
-            if "oauth_status" not in st.session_state:
-                st.session_state.oauth_status = {
-                    "todoist": {"connected": False, "user_email": None},
-                    "google_accounts": [],  # List of connected Google accounts
-                }
+            # OAuth status is loaded by load_oauth_status function
 
             # Todoist Configuration Section
             st.write("### 📋 Todoist Integration")
@@ -159,22 +315,16 @@ async def main() -> None:
                 st.success(f"✅ Connected as: {todoist_status['user_email']}")
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("🔄 Refresh Connection", key="todoist_refresh"):
-                        # Placeholder for refresh logic
-                        st.info("Todoist connection refresh - to be implemented")
+                    if st.button("🔄 Test Connection", key="todoist_refresh"):
+                        test_todoist_connection()
                 with col2:
                     if st.button("❌ Disconnect", key="todoist_disconnect"):
-                        # Placeholder for disconnect logic
-                        st.session_state.oauth_status["todoist"] = {
-                            "connected": False,
-                            "user_email": None,
-                        }
+                        disconnect_todoist()
                         st.rerun()
             else:
                 st.warning("⚠️ Not connected to Todoist")
                 if st.button("🔗 Connect Todoist Account", key="todoist_connect"):
-                    # Placeholder for OAuth flow
-                    st.info("Todoist OAuth flow - to be implemented in task 2.2")
+                    start_todoist_oauth()
 
             st.divider()
 
@@ -252,7 +402,23 @@ async def main() -> None:
             # Test Connection Button
             if integrations_connected > 0:
                 if st.button("🧪 Test Connections", key="test_connections"):
-                    st.info("Connection testing - to be implemented")
+                    with st.spinner("Testing connections..."):
+                        results = []
+
+                        # Test Todoist if connected
+                        if todoist_status["connected"]:
+                            if test_todoist_connection():
+                                results.append("✅ Todoist: Working")
+                            else:
+                                results.append("❌ Todoist: Failed")
+
+                        # Test Google accounts if connected (placeholder)
+                        if google_accounts:
+                            results.append("⚠️ Google Calendar: Testing not implemented")
+
+                        if results:
+                            for result in results:
+                                st.write(result)
 
         @st.dialog("Architecture")
         def architecture_dialog() -> None:

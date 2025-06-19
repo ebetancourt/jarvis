@@ -39,7 +39,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 
 - [ ] 2.0 Build Streamlit OAuth Configuration Interface
   - [x] 2.1 Create OAuth configuration page/section in existing `streamlit_app.py` (FR-010)
-  - [ ] 2.2 Implement Todoist OAuth authentication flow and token management
+  - [x] 2.2 Implement Todoist OAuth authentication flow and token management
   - [ ] 2.3 Implement Google account authentication flow with multiple account support
   - [ ] 2.4 Build calendar selection interface for each connected Google account (FR-009)
   - [ ] 2.5 Add account management features for both Todoist and Google (add, remove, reconfigure connections)
