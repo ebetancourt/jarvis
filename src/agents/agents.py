@@ -12,6 +12,7 @@ from agents.knowledge_base_agent import kb_agent
 from agents.langgraph_supervisor_agent import langgraph_supervisor_agent
 from agents.rag_assistant import rag_assistant
 from agents.research_assistant import research_assistant
+from agents.weekly_review_agent import weekly_review_agent
 from schema import AgentInfo
 
 DEFAULT_AGENT = "research-assistant"
@@ -39,14 +40,26 @@ agents: dict[str, Agent] = {
     "langgraph-supervisor-agent": Agent(
         description="A langgraph supervisor agent", graph=langgraph_supervisor_agent
     ),
-    "interrupt-agent": Agent(description="An agent the uses interrupts.", graph=interrupt_agent),
+    "interrupt-agent": Agent(
+        description="An agent the uses interrupts.", graph=interrupt_agent
+    ),
     "knowledge-base-agent": Agent(
-        description="A retrieval-augmented generation agent using Amazon Bedrock Knowledge Base",
+        description=(
+            "A retrieval-augmented generation agent using Amazon Bedrock "
+            "Knowledge Base"
+        ),
         graph=kb_agent,
     ),
     "journaling-agent": Agent(
         description="A daily journaling assistant with guided prompts",
         graph=journaling_agent,
+    ),
+    "weekly-review-agent": Agent(
+        description=(
+            "A GTD-style weekly review and planning assistant with task and "
+            "calendar integration"
+        ),
+        graph=weekly_review_agent,
     ),
 }
 
@@ -57,5 +70,6 @@ def get_agent(agent_id: str) -> Pregel:
 
 def get_all_agent_info() -> list[AgentInfo]:
     return [
-        AgentInfo(key=agent_id, description=agent.description) for agent_id, agent in agents.items()
+        AgentInfo(key=agent_id, description=agent.description)
+        for agent_id, agent in agents.items()
     ]

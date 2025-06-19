@@ -5,6 +5,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 ## Relevant Files
 
 - `src/agents/weekly_review_agent.py` - Main agent implementation with conversational interface and review logic.
+- `src/agents/agents.py` - Agent registry with weekly review agent added as "weekly-review-agent".
 - `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
 - `src/tools/todoist_tools.py` - Todoist API integration tools for fetching and updating tasks/projects.
 - `tests/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
@@ -31,7 +32,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 
 - [ ] 1.0 Create Weekly Review Agent Infrastructure
   - [x] 1.1 Create `src/agents/weekly_review_agent.py` with basic LangGraph agent structure
-  - [ ] 1.2 Add weekly review agent to `src/agents/agents.py` registry with proper description
+  - [x] 1.2 Add weekly review agent to `src/agents/agents.py` registry with proper description
   - [ ] 1.3 Create agent prompt template that incorporates GTD methodology and areas of responsibility
   - [ ] 1.4 Implement basic conversational interface with memory and context handling (FR-026, FR-028)
   - [ ] 1.5 Add graceful handling for sparse data scenarios (FR-027)
