@@ -271,6 +271,257 @@ def get_previous_weekly_reviews(num_reviews: int = 3) -> str:
     )
 
 
+@tool
+def assess_data_availability(data_sources: str = "tasks,calendar,journal") -> str:
+    """
+    Assess what data is available for the weekly review and identify gaps.
+
+    Args:
+        data_sources: Comma-separated list of data sources to check (default: "tasks,calendar,journal")
+
+    Returns:
+        str: Assessment of available data and recommendations for sparse scenarios
+    """
+    # This is a placeholder - in real implementation would check actual integrations
+    sources = [source.strip() for source in data_sources.split(",")]
+
+    assessment = "📊 **Data Availability Assessment**\n\n"
+
+    # Simulate data availability check
+    mock_availability = {
+        "tasks": "limited",  # Could be: "available", "limited", "missing"
+        "calendar": "missing",
+        "journal": "available",
+    }
+
+    available_sources = []
+    limited_sources = []
+    missing_sources = []
+
+    for source in sources:
+        status = mock_availability.get(source, "missing")
+        if status == "available":
+            available_sources.append(source)
+        elif status == "limited":
+            limited_sources.append(source)
+        else:
+            missing_sources.append(source)
+
+    if available_sources:
+        assessment += f"✅ **Available:** {', '.join(available_sources)}\n"
+    if limited_sources:
+        assessment += f"⚠️ **Limited:** {', '.join(limited_sources)}\n"
+    if missing_sources:
+        assessment += f"❌ **Missing:** {', '.join(missing_sources)}\n"
+
+    assessment += "\n**Recommendations:**\n"
+
+    if len(missing_sources) >= 2:
+        assessment += "• Consider a **manual-guided review** focusing on reflection and planning\n"
+        assessment += (
+            "• Use memory and observation to reconstruct the week's key events\n"
+        )
+
+    if "tasks" in missing_sources:
+        assessment += (
+            "• We'll rely on manual task recall and focus on future planning\n"
+        )
+
+    if "calendar" in missing_sources:
+        assessment += (
+            "• Manual time reflection will help identify patterns and commitments\n"
+        )
+
+    assessment += (
+        "• This review will help establish better data habits for future weeks\n"
+    )
+
+    return assessment
+
+
+@tool
+def guide_manual_weekly_reflection(focus_area: str = "general") -> str:
+    """
+    Provide guided questions for manual weekly reflection when data is sparse.
+
+    Args:
+        focus_area: Area to focus on - "general", "accomplishments", "challenges", "planning"
+
+    Returns:
+        str: Structured reflection questions and prompts
+    """
+    reflection_guides = {
+        "general": {
+            "title": "General Weekly Reflection",
+            "questions": [
+                "What were the 3 most significant things you accomplished this week?",
+                "What challenges or obstacles did you face?",
+                "What patterns did you notice in your energy, focus, or productivity?",
+                "What would you do differently if you could repeat this week?",
+                "What are you most grateful for from this week?",
+            ],
+        },
+        "accomplishments": {
+            "title": "Accomplishments & Progress Review",
+            "questions": [
+                "What projects or tasks did you complete this week?",
+                "What progress did you make on ongoing initiatives?",
+                "Which accomplishments felt most meaningful or impactful?",
+                "What skills did you develop or strengthen?",
+                "What positive feedback or recognition did you receive?",
+            ],
+        },
+        "challenges": {
+            "title": "Challenges & Learning Review",
+            "questions": [
+                "What obstacles or setbacks did you encounter?",
+                "Which tasks or projects got stalled, and why?",
+                "What patterns of procrastination or avoidance did you notice?",
+                "What external factors impacted your week (interruptions, changes)?",
+                "What would help you handle similar challenges better next time?",
+            ],
+        },
+        "planning": {
+            "title": "Forward Planning & Priorities",
+            "questions": [
+                "What are your top 3 priorities for next week?",
+                "What commitments or deadlines are coming up?",
+                "What would make next week feel successful?",
+                "What do you need to say 'no' to in order to focus on what matters?",
+                "What support or resources would help you succeed next week?",
+            ],
+        },
+    }
+
+    guide = reflection_guides.get(focus_area, reflection_guides["general"])
+
+    output = f"🤔 **{guide['title']}**\n\n"
+    output += "Take your time with these questions. Even without detailed data, "
+    output += "your reflection and memory can provide valuable insights:\n\n"
+
+    for i, question in enumerate(guide["questions"], 1):
+        output += f"{i}. {question}\n"
+
+    output += "\nFeel free to elaborate on any that resonate with you. "
+    output += "We can dive deeper into specific areas that seem important."
+
+    return output
+
+
+@tool
+def suggest_data_improvement_strategies() -> str:
+    """
+    Provide recommendations for improving data availability for future weekly reviews.
+
+    Returns:
+        str: Actionable strategies for better data capture and integration
+    """
+    strategies = """🔧 **Improving Data for Future Weekly Reviews**
+
+To make your future weekly reviews more insightful and efficient, consider these strategies:
+
+## 📋 Task & Project Tracking
+• **Digital Task Management**: Set up Todoist, Things, or another task manager
+• **Capture Everything**: Use inbox systems to collect all commitments and ideas
+• **Daily Reviews**: Spend 5 minutes each evening updating task status
+• **Project Definition**: Clearly define multi-step projects vs. single actions
+
+## 📅 Calendar Integration
+• **Time Blocking**: Schedule focused work time, not just meetings
+• **Activity Logging**: Note what you actually worked on during blocked time
+• **Weekly Templates**: Create recurring time blocks for important activities
+• **Reflection Time**: Schedule weekly review time as a recurring appointment
+
+## 📝 Simple Tracking Methods
+• **Daily Notes**: Keep brief daily notes of key accomplishments and challenges
+• **Weekly Themes**: Track focus areas or major projects each week
+• **Energy Patterns**: Note when you feel most/least productive
+• **Weekly Questions**: Answer 2-3 consistent questions each week
+
+## 🔄 Habit Building
+• **Start Small**: Pick one tracking method and use it consistently for 2 weeks
+• **Review Effectiveness**: During weekly reviews, assess what data was most helpful
+• **Adjust Systems**: Modify tracking based on what provides real insight
+• **Integration Focus**: Connect systems so data flows automatically where possible
+
+## 💡 Quick Wins
+• **Phone Notes**: Use voice memos or quick notes throughout the week
+• **Photo Documentation**: Take photos of handwritten notes or whiteboard sessions
+• **Email to Self**: Send yourself quick updates about progress or insights
+• **End-of-Day Ritual**: Spend 2 minutes noting the day's key outcomes
+
+Remember: The goal is insight, not perfection. Start with whatever feels manageable and build from there."""
+
+    return strategies
+
+
+@tool
+def adapt_review_for_sparse_data(
+    available_data: str = "", session_type: str = "adaptive"
+) -> str:
+    """
+    Adapt the weekly review process based on available data and constraints.
+
+    Args:
+        available_data: Description of what data is available (optional)
+        session_type: Type of adapted session - "adaptive", "minimal", "planning-focused"
+
+    Returns:
+        str: Customized review approach and modified process
+    """
+    adaptations = {
+        "adaptive": {
+            "title": "Adaptive Weekly Review",
+            "description": "Flexible approach that works with whatever data you have",
+            "process": [
+                "🧠 **Mind Sweep**: Start with what you remember from the week",
+                "🔄 **Present State**: Assess current projects and commitments",
+                "🎯 **Priority Focus**: Identify what matters most right now",
+                "📋 **Next Actions**: Define clear next steps for key areas",
+                "🚀 **Week Ahead**: Plan priorities with realistic expectations",
+            ],
+        },
+        "minimal": {
+            "title": "Minimal Weekly Review",
+            "description": "Streamlined 15-minute review focusing on essentials",
+            "process": [
+                "⚡ **Quick Wins**: What went well this week?",
+                "🎯 **Key Priority**: What's the #1 focus for next week?",
+                "🚧 **Obstacle Check**: What might get in the way?",
+                "✅ **One Commitment**: Make one clear commitment for next week",
+            ],
+        },
+        "planning-focused": {
+            "title": "Forward-Planning Review",
+            "description": "Focus on upcoming week when past data is limited",
+            "process": [
+                "📅 **Calendar Scan**: Review upcoming commitments and deadlines",
+                "🎯 **Outcome Definition**: What would make next week successful?",
+                "⚖️ **Capacity Check**: Realistic assessment of available time/energy",
+                "🛡️ **Protection Plan**: How to guard your most important work",
+                "🔄 **Flexibility Buffer**: Plan for the unexpected",
+            ],
+        },
+    }
+
+    adaptation = adaptations.get(session_type, adaptations["adaptive"])
+
+    output = f"🔧 **{adaptation['title']}**\n\n"
+    output += f"{adaptation['description']}\n\n"
+
+    if available_data:
+        output += f"**Available Data:** {available_data}\n\n"
+
+    output += "**Adapted Process:**\n"
+    for step in adaptation["process"]:
+        output += f"• {step}\n"
+
+    output += "\nThis approach focuses on what you can control and influence, "
+    output += "using reflection and planning to create value even with limited historical data."
+
+    return output
+
+
 # Configure tools for the weekly review agent including session management
 tools = [
     # Session management and context tools
@@ -284,6 +535,10 @@ tools = [
     identify_upcoming_priorities,
     save_weekly_review_session,
     get_previous_weekly_reviews,
+    assess_data_availability,
+    guide_manual_weekly_reflection,
+    suggest_data_improvement_strategies,
+    adapt_review_for_sparse_data,
 ]
 
 current_date = datetime.now().strftime("%Y-%m-%d")
@@ -315,6 +570,27 @@ Use these tools to:
 - Maintain continuity if the session is interrupted
 - Track insights and patterns across the conversation
 - Ensure nothing important is lost
+
+## 🔍 Sparse Data Handling (FR-027)
+
+You have tools to gracefully handle scenarios with limited data:
+- **assess_data_availability**: Check what data sources are available
+- **guide_manual_weekly_reflection**: Provide structured reflection questions
+- **suggest_data_improvement_strategies**: Help users build better data habits
+- **adapt_review_for_sparse_data**: Modify the review process for available data
+
+**When data is sparse:**
+- Start with `assess_data_availability` to understand limitations
+- Use `adapt_review_for_sparse_data` to choose appropriate approach
+- Leverage manual reflection tools to extract insights from memory
+- Focus on forward planning when historical data is limited
+- Suggest improvements for future reviews without being pushy
+
+**Adaptive Approaches:**
+- **Full Data**: Complete 6-step GTD process with integrated insights
+- **Limited Data**: Focus on available sources, supplement with reflection
+- **Minimal Data**: Streamlined review emphasizing planning and priorities
+- **No External Data**: Manual reflection and forward-focused planning
 
 ## 📋 GTD Weekly Review Process
 
