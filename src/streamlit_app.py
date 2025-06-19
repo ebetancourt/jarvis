@@ -3,6 +3,7 @@ import os
 import urllib.parse
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Optional, Dict, Any
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -17,7 +18,6 @@ from common.oauth_manager import (
     GoogleOAuth,
     get_todoist_config,
     get_google_config,
-    OAuthToken,
 )
 
 # A Streamlit app for interacting with the langgraph agent via a simple chat interface.
@@ -190,11 +190,16 @@ def load_oauth_status(user_id: str):
     for google_user_id, token in google_tokens.items():
         # Only include tokens that belong to this user
         if google_user_id.startswith(user_id) and token.user_info:
+            # Get calendar summary for this account
+            calendar_summary = get_calendar_summary(google_user_id)
+
             account_info = {
                 "user_id": google_user_id,
                 "email": token.user_info.get("email", "Unknown"),
                 "name": token.user_info.get("name", "Unknown"),
                 "is_valid": oauth_manager.is_token_valid(token),
+                "calendars_enabled": calendar_summary["enabled"],
+                "calendars_total": calendar_summary["total"],
             }
             google_accounts.append(account_info)
 
@@ -355,6 +360,63 @@ def test_google_connection(account_email: str) -> bool:
     return False
 
 
+def fetch_google_calendars(google_user_id: str) -> Optional[list[Dict[str, Any]]]:
+    """Fetch calendars for a specific Google account."""
+    # Get valid token
+    valid_token = oauth_manager.get_valid_token("google", google_user_id)
+    if not valid_token:
+        st.error("❌ No valid Google token found")
+        return None
+
+    # Get Google OAuth handler
+    google_config = get_google_config()
+    if not google_config:
+        st.error("❌ Google OAuth configuration missing")
+        return None
+
+    google_oauth = GoogleOAuth(google_config, oauth_manager)
+    calendars = google_oauth.get_calendars(valid_token)
+
+    if calendars:
+        # Merge with stored preferences
+        stored_prefs = oauth_manager.get_calendar_preferences(google_user_id)
+        if stored_prefs:
+            # Update calendars with stored enabled/disabled state
+            stored_calendar_map = {cal["id"]: cal for cal in stored_prefs}
+            for calendar in calendars:
+                stored_cal = stored_calendar_map.get(calendar["id"])
+                if stored_cal:
+                    calendar["enabled"] = stored_cal.get("enabled", True)
+
+        # Store updated preferences
+        oauth_manager.store_calendar_preferences(google_user_id, calendars)
+
+    return calendars
+
+
+def update_calendar_selection(google_user_id: str, calendar_id: str, enabled: bool):
+    """Update the enabled status of a calendar."""
+    success = oauth_manager.update_calendar_enabled_status(
+        google_user_id, calendar_id, enabled
+    )
+    if success:
+        st.success(f"✅ Calendar {'enabled' if enabled else 'disabled'}")
+    else:
+        st.error("❌ Failed to update calendar selection")
+
+
+def get_calendar_summary(google_user_id: str) -> Dict[str, int]:
+    """Get summary of enabled vs total calendars for a Google account."""
+    calendars = oauth_manager.get_calendar_preferences(google_user_id)
+    if not calendars:
+        return {"enabled": 0, "total": 0}
+
+    enabled_count = sum(1 for cal in calendars if cal.get("enabled", True))
+    total_count = len(calendars)
+
+    return {"enabled": enabled_count, "total": total_count}
+
+
 def test_todoist_connection():
     """Test the Todoist connection."""
     user_id = get_or_create_user_id()
@@ -510,34 +572,99 @@ async def main() -> None:
                 for i, account in enumerate(google_accounts):
                     with st.expander(f"📧 {account['email']}", expanded=False):
                         st.write(f"**Account:** {account['email']}")
-                        if account.get("calendars"):
-                            selected_calendars = len(
-                                [
-                                    cal
-                                    for cal in account["calendars"]
-                                    if cal.get("enabled", True)
-                                ]
-                            )
-                            total_calendars = len(account["calendars"])
+
+                        # Get calendar summary
+                        calendar_summary = get_calendar_summary(account["user_id"])
+                        if calendar_summary["total"] > 0:
                             st.write(
-                                f"**Calendars:** {selected_calendars}/{total_calendars} enabled"
+                                f"**Calendars:** {calendar_summary['enabled']}/"
+                                f"{calendar_summary['total']} enabled"
                             )
                         else:
-                            st.write("**Calendars:** Loading...")
+                            st.write("**Calendars:** Not loaded")
 
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            if st.button("⚙️ Configure", key=f"google_config_{i}"):
-                                st.info(
-                                    "Google calendar configuration - to be implemented"
-                                )
-                        with col2:
-                            if st.button("🔄 Test", key=f"google_refresh_{i}"):
-                                test_google_connection(account["email"])
-                        with col3:
-                            if st.button("❌ Remove", key=f"google_remove_{i}"):
-                                disconnect_google_account(account["email"])
-                                st.rerun()
+                        # Calendar Configuration Section
+                        with st.container():
+                            col1, col2 = st.columns([2, 1])
+                            with col1:
+                                if st.button(
+                                    "📅 Configure Calendars", key=f"google_config_{i}"
+                                ):
+                                    # Fetch and display calendars
+                                    with st.spinner("Loading calendars..."):
+                                        calendars = fetch_google_calendars(
+                                            account["user_id"]
+                                        )
+
+                                    if calendars:
+                                        st.write(
+                                            "**Select calendars to include in weekly reviews:**"
+                                        )
+
+                                        for cal_idx, calendar in enumerate(calendars):
+                                            col_check, col_info = st.columns([1, 4])
+
+                                            with col_check:
+                                                current_enabled = calendar.get(
+                                                    "enabled", True
+                                                )
+                                                enabled = st.checkbox(
+                                                    "",
+                                                    value=current_enabled,
+                                                    key=f"cal_{account['user_id']}_{cal_idx}",
+                                                )
+
+                                                # Handle change detection manually
+                                                if (
+                                                    f"cal_prev_{account['user_id']}_{cal_idx}"
+                                                    not in st.session_state
+                                                ):
+                                                    st.session_state[
+                                                        f"cal_prev_{account['user_id']}_{cal_idx}"
+                                                    ] = current_enabled
+
+                                                prev_enabled = st.session_state[
+                                                    f"cal_prev_{account['user_id']}_{cal_idx}"
+                                                ]
+                                                if enabled != prev_enabled:
+                                                    update_calendar_selection(
+                                                        account["user_id"],
+                                                        calendar["id"],
+                                                        enabled,
+                                                    )
+                                                    st.session_state[
+                                                        f"cal_prev_{account['user_id']}_{cal_idx}"
+                                                    ] = enabled
+
+                                            with col_info:
+                                                calendar_name = calendar.get(
+                                                    "summary", "Untitled"
+                                                )
+                                                if calendar.get("primary"):
+                                                    calendar_name += " (Primary)"
+
+                                                st.write(f"**{calendar_name}**")
+                                                if calendar.get("description"):
+                                                    st.caption(calendar["description"])
+
+                                                # Show access role
+                                                access_role = calendar.get(
+                                                    "access_role", "reader"
+                                                )
+                                                st.caption(
+                                                    f"Access: {access_role.title()}"
+                                                )
+                                    else:
+                                        st.error("Failed to load calendars")
+
+                            with col2:
+                                if st.button("🔄 Test", key=f"google_test_{i}"):
+                                    test_google_connection(account["email"])
+
+                        # Account Management
+                        if st.button("❌ Remove Account", key=f"google_remove_{i}"):
+                            disconnect_google_account(account["email"])
+                            st.rerun()
 
                 if st.button("➕ Add Another Google Account", key="google_add_another"):
                     start_google_oauth()

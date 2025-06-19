@@ -44,7 +44,10 @@ class GoogleConfig:
     client_id: str
     client_secret: str
     redirect_uri: str
-    scope: str = "https://www.googleapis.com/auth/calendar.readonly"
+    scope: str = (
+        "https://www.googleapis.com/auth/calendar.readonly "
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+    )
 
 
 class OAuthManager:
@@ -52,8 +55,11 @@ class OAuthManager:
 
     def __init__(self, storage_path: str = "oauth_tokens.json"):
         self.storage_path = storage_path
+        self.calendar_prefs_path = "calendar_preferences.json"
         self._tokens: Dict[str, Dict[str, OAuthToken]] = {}
+        self._calendar_preferences: Dict[str, Dict[str, Any]] = {}
         self._load_tokens()
+        self._load_calendar_preferences()
 
     def _load_tokens(self) -> None:
         """Load tokens from persistent storage."""
@@ -85,6 +91,28 @@ class OAuthManager:
         except Exception as e:
             print(f"Error saving tokens: {e}")
 
+    def _load_calendar_preferences(self) -> None:
+        """Load calendar preferences from persistent storage."""
+        if os.path.exists(self.calendar_prefs_path):
+            try:
+                with open(self.calendar_prefs_path, "r") as f:
+                    self._calendar_preferences = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                self._calendar_preferences = {}
+        else:
+            self._calendar_preferences = {}
+
+    def _save_calendar_preferences(self) -> None:
+        """Save calendar preferences to persistent storage."""
+        try:
+            # Write to temporary file first, then rename for atomic operation
+            temp_path = f"{self.calendar_prefs_path}.tmp"
+            with open(temp_path, "w") as f:
+                json.dump(self._calendar_preferences, f, indent=2)
+            os.rename(temp_path, self.calendar_prefs_path)
+        except Exception as e:
+            print(f"Error saving calendar preferences: {e}")
+
     def store_token(self, service: str, user_id: str, token: OAuthToken) -> None:
         """Store an OAuth token for a user and service."""
         if service not in self._tokens:
@@ -103,6 +131,10 @@ class OAuthManager:
             if not self._tokens[service]:  # Remove service if no users
                 del self._tokens[service]
             self._save_tokens()
+
+            # Also remove calendar preferences for Google accounts
+            if service == "google":
+                self.remove_calendar_preferences(user_id)
 
     def is_token_valid(self, token: OAuthToken) -> bool:
         """Check if a token is still valid (not expired)."""
@@ -170,6 +202,54 @@ class OAuthManager:
                 }
                 accounts.append(account)
         return accounts
+
+    def store_calendar_preferences(
+        self, user_id: str, calendars: list[Dict[str, Any]]
+    ) -> None:
+        """Store calendar preferences for a Google account."""
+        self._calendar_preferences[user_id] = {
+            "calendars": calendars,
+            "updated_at": time.time(),
+        }
+        self._save_calendar_preferences()
+
+    def get_calendar_preferences(self, user_id: str) -> Optional[list[Dict[str, Any]]]:
+        """Get calendar preferences for a Google account."""
+        prefs = self._calendar_preferences.get(user_id)
+        if prefs:
+            return prefs.get("calendars")
+        return None
+
+    def update_calendar_enabled_status(
+        self, user_id: str, calendar_id: str, enabled: bool
+    ) -> bool:
+        """Update the enabled status of a specific calendar."""
+        prefs = self._calendar_preferences.get(user_id)
+        if not prefs or "calendars" not in prefs:
+            return False
+
+        for calendar in prefs["calendars"]:
+            if calendar.get("id") == calendar_id:
+                calendar["enabled"] = enabled
+                prefs["updated_at"] = time.time()
+                self._save_calendar_preferences()
+                return True
+
+        return False
+
+    def get_enabled_calendars(self, user_id: str) -> list[Dict[str, Any]]:
+        """Get list of enabled calendars for a Google account."""
+        calendars = self.get_calendar_preferences(user_id)
+        if not calendars:
+            return []
+
+        return [cal for cal in calendars if cal.get("enabled", True)]
+
+    def remove_calendar_preferences(self, user_id: str) -> None:
+        """Remove calendar preferences for a user (e.g., when disconnecting)."""
+        if user_id in self._calendar_preferences:
+            del self._calendar_preferences[user_id]
+            self._save_calendar_preferences()
 
 
 class TodoistOAuth:
@@ -446,6 +526,44 @@ class GoogleOAuth:
             return response.status_code == 200
         except requests.RequestException:
             return False
+
+    def get_calendars(self, token: OAuthToken) -> Optional[list[Dict[str, Any]]]:
+        """Get list of calendars from Google Calendar API."""
+        try:
+            headers = {"Authorization": f"Bearer {token.access_token}"}
+            response = requests.get(
+                "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+
+            calendar_data = response.json()
+            calendars = []
+
+            for calendar_item in calendar_data.get("items", []):
+                calendar_info = {
+                    "id": calendar_item.get("id"),
+                    "summary": calendar_item.get("summary", "Untitled Calendar"),
+                    "description": calendar_item.get("description", ""),
+                    "primary": calendar_item.get("primary", False),
+                    "access_role": calendar_item.get("accessRole", "reader"),
+                    "selected": calendar_item.get("selected", True),
+                    "background_color": calendar_item.get("backgroundColor", "#9FC6E7"),
+                    "foreground_color": calendar_item.get("foregroundColor", "#000000"),
+                    "time_zone": calendar_item.get("timeZone"),
+                    "enabled": True,  # Default to enabled for new calendars
+                }
+                calendars.append(calendar_info)
+
+            return calendars
+
+        except requests.RequestException as e:
+            print(f"Error fetching calendars: {e}")
+            return None
+        except (KeyError, json.JSONDecodeError) as e:
+            print(f"Error parsing calendar response: {e}")
+            return None
 
     def revoke_token(self, token: OAuthToken) -> bool:
         """Revoke an access token."""
