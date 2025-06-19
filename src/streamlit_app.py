@@ -14,7 +14,9 @@ from schema.task_data import TaskData, TaskDataStatus
 from common.oauth_manager import (
     oauth_manager,
     TodoistOAuth,
+    GoogleOAuth,
     get_todoist_config,
+    get_google_config,
     OAuthToken,
 )
 
@@ -59,7 +61,7 @@ def get_or_create_user_id() -> str:
 
 
 def handle_oauth_callback():
-    """Handle OAuth callback for Todoist."""
+    """Handle OAuth callback for Todoist and Google."""
     # Check for OAuth callback parameters
     if "code" in st.query_params and "state" in st.query_params:
         code = st.query_params["code"]
@@ -67,42 +69,92 @@ def handle_oauth_callback():
 
         # Verify state matches what we stored
         if "oauth_state" in st.session_state and st.session_state.oauth_state == state:
-            # Get Todoist config
-            todoist_config = get_todoist_config()
-            if todoist_config:
-                # Initialize OAuth handler
-                todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
+            user_id = get_or_create_user_id()
 
-                # Exchange code for token
-                token = todoist_oauth.exchange_code_for_token(code, state)
-
-                if token:
-                    # Store token for current user
-                    user_id = get_or_create_user_id()
-                    oauth_manager.store_token("todoist", user_id, token)
-
-                    # Update session state
-                    st.session_state.oauth_status["todoist"] = {
-                        "connected": True,
-                        "user_email": (
-                            token.user_info.get("email")
-                            if token.user_info
-                            else "Unknown"
-                        ),
-                    }
-
-                    # Clear OAuth state and URL params
-                    del st.session_state.oauth_state
-                    st.query_params.clear()
-
-                    st.success("✅ Successfully connected to Todoist!")
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to connect to Todoist. Please try again.")
+            # Check which service we're handling (based on state or URL)
+            if "oauth_service" in st.session_state:
+                service = st.session_state.oauth_service
+            elif "google" in st.query_params.get("state", ""):
+                service = "google"
             else:
-                st.error(
-                    "❌ Todoist OAuth configuration missing. Please check environment variables."
-                )
+                service = "todoist"  # Default to Todoist for backward compatibility
+
+            if service == "todoist":
+                # Get Todoist config
+                todoist_config = get_todoist_config()
+                if todoist_config:
+                    # Initialize OAuth handler
+                    todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
+
+                    # Exchange code for token
+                    token = todoist_oauth.exchange_code_for_token(code, state)
+
+                    if token:
+                        # Store token for current user
+                        oauth_manager.store_token("todoist", user_id, token)
+
+                        # Update session state
+                        st.session_state.oauth_status["todoist"] = {
+                            "connected": True,
+                            "user_email": (
+                                token.user_info.get("email")
+                                if token.user_info
+                                else "Unknown"
+                            ),
+                        }
+
+                        # Clear OAuth state and URL params
+                        if "oauth_state" in st.session_state:
+                            del st.session_state.oauth_state
+                        if "oauth_service" in st.session_state:
+                            del st.session_state.oauth_service
+                        st.query_params.clear()
+
+                        st.success("✅ Successfully connected to Todoist!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to connect to Todoist. Please try again.")
+                else:
+                    st.error(
+                        "❌ Todoist OAuth configuration missing. "
+                        "Please check environment variables."
+                    )
+            elif service == "google":
+                # Get Google config
+                google_config = get_google_config()
+                if google_config:
+                    # Initialize OAuth handler
+                    google_oauth = GoogleOAuth(google_config, oauth_manager)
+
+                    # Exchange code for token
+                    token = google_oauth.exchange_code_for_token(code, state)
+
+                    if token:
+                        # Create unique user ID for this Google account
+                        google_email = token.user_info.get("email", "unknown")
+                        google_user_id = f"{user_id}_google_{google_email}"
+
+                        # Store token
+                        oauth_manager.store_token("google", google_user_id, token)
+
+                        # Clear OAuth state and URL params
+                        if "oauth_state" in st.session_state:
+                            del st.session_state.oauth_state
+                        if "oauth_service" in st.session_state:
+                            del st.session_state.oauth_service
+                        st.query_params.clear()
+
+                        st.success(
+                            f"✅ Successfully connected Google account: {google_email}!"
+                        )
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to connect to Google. Please try again.")
+                else:
+                    st.error(
+                        "❌ Google OAuth configuration missing. "
+                        "Please check environment variables."
+                    )
         else:
             st.error("❌ Invalid OAuth state. Please try again.")
 
@@ -132,13 +184,30 @@ def load_oauth_status(user_id: str):
             "user_email": None,
         }
 
+    # Check for Google accounts
+    google_accounts = []
+    google_tokens = oauth_manager.get_all_tokens("google")
+    for google_user_id, token in google_tokens.items():
+        # Only include tokens that belong to this user
+        if google_user_id.startswith(user_id) and token.user_info:
+            account_info = {
+                "user_id": google_user_id,
+                "email": token.user_info.get("email", "Unknown"),
+                "name": token.user_info.get("name", "Unknown"),
+                "is_valid": oauth_manager.is_token_valid(token),
+            }
+            google_accounts.append(account_info)
+
+    st.session_state.oauth_status["google_accounts"] = google_accounts
+
 
 def start_todoist_oauth():
     """Start the Todoist OAuth flow."""
     todoist_config = get_todoist_config()
     if not todoist_config:
         st.error(
-            "❌ Todoist OAuth configuration missing. Please set TODOIST_CLIENT_ID and TODOIST_CLIENT_SECRET environment variables."
+            "❌ Todoist OAuth configuration missing. Please set TODOIST_CLIENT_ID "
+            "and TODOIST_CLIENT_SECRET environment variables."
         )
         return
 
@@ -150,6 +219,7 @@ def start_todoist_oauth():
 
     # Store state for verification
     st.session_state.oauth_state = state
+    st.session_state.oauth_service = "todoist"
 
     # Redirect to authorization URL
     st.markdown(
@@ -157,7 +227,8 @@ def start_todoist_oauth():
         unsafe_allow_html=True,
     )
     st.info(
-        "You will be redirected to Todoist to authorize access. Please complete the authorization and return here."
+        "You will be redirected to Todoist to authorize access. "
+        "Please complete the authorization and return here."
     )
 
 
@@ -181,6 +252,107 @@ def disconnect_todoist():
     st.session_state.oauth_status["todoist"] = {"connected": False, "user_email": None}
 
     st.success("✅ Disconnected from Todoist")
+
+
+def start_google_oauth():
+    """Start the Google OAuth flow."""
+    google_config = get_google_config()
+    if not google_config:
+        st.error(
+            "❌ Google OAuth configuration missing. Please set "
+            "GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET "
+            "environment variables."
+        )
+        return
+
+    # Initialize OAuth handler
+    google_oauth = GoogleOAuth(google_config, oauth_manager)
+
+    # Generate authorization URL
+    auth_url, state = google_oauth.get_authorization_url()
+
+    # Store state for verification
+    st.session_state.oauth_state = state
+    st.session_state.oauth_service = "google"
+
+    # Redirect to authorization URL
+    st.markdown(
+        f'<a href="{auth_url}" target="_self">'
+        "Click here to authorize Google Calendar access</a>",
+        unsafe_allow_html=True,
+    )
+    st.info(
+        "You will be redirected to Google to authorize access. "
+        "Please complete the authorization and return here."
+    )
+
+
+def disconnect_google_account(account_email: str):
+    """Disconnect a specific Google account."""
+    user_id = get_or_create_user_id()
+
+    # Find all Google tokens for this user
+    google_tokens = oauth_manager.get_all_tokens("google")
+    account_removed = False
+
+    for google_user_id, token in google_tokens.items():
+        if (
+            token.user_info
+            and token.user_info.get("email") == account_email
+            and google_user_id.startswith(user_id)
+        ):
+            # Try to revoke the token
+            google_config = get_google_config()
+            if google_config:
+                google_oauth = GoogleOAuth(google_config, oauth_manager)
+                google_oauth.revoke_token(token)
+
+            # Remove token from storage
+            oauth_manager.remove_token("google", google_user_id)
+            account_removed = True
+            break
+
+    if account_removed:
+        st.success(f"✅ Disconnected Google account: {account_email}")
+    else:
+        st.error(f"❌ Could not find account: {account_email}")
+
+
+def test_google_connection(account_email: str) -> bool:
+    """Test a specific Google connection."""
+    user_id = get_or_create_user_id()
+
+    # Find the token for this account
+    google_tokens = oauth_manager.get_all_tokens("google")
+    for google_user_id, token in google_tokens.items():
+        if (
+            token.user_info
+            and token.user_info.get("email") == account_email
+            and google_user_id.startswith(user_id)
+        ):
+            # Get valid token (will refresh if needed)
+            valid_token = oauth_manager.get_valid_token("google", google_user_id)
+            if not valid_token:
+                st.error(f"❌ No valid Google token for {account_email}")
+                return False
+
+            # Test the token
+            google_config = get_google_config()
+            if google_config:
+                google_oauth = GoogleOAuth(google_config, oauth_manager)
+                if google_oauth.test_token(valid_token):
+                    st.success(
+                        f"✅ Google Calendar connection working for {account_email}!"
+                    )
+                    return True
+                else:
+                    st.error(
+                        f"❌ Google Calendar connection failed for {account_email}"
+                    )
+                    return False
+
+    st.error(f"❌ Google account {account_email} not found")
+    return False
 
 
 def test_todoist_connection():
@@ -360,20 +532,19 @@ async def main() -> None:
                                     "Google calendar configuration - to be implemented"
                                 )
                         with col2:
-                            if st.button("🔄 Refresh", key=f"google_refresh_{i}"):
-                                st.info("Google token refresh - to be implemented")
+                            if st.button("🔄 Test", key=f"google_refresh_{i}"):
+                                test_google_connection(account["email"])
                         with col3:
                             if st.button("❌ Remove", key=f"google_remove_{i}"):
-                                st.session_state.oauth_status["google_accounts"].pop(i)
+                                disconnect_google_account(account["email"])
                                 st.rerun()
 
                 if st.button("➕ Add Another Google Account", key="google_add_another"):
-                    st.info("Additional Google account OAuth - to be implemented")
+                    start_google_oauth()
             else:
                 st.warning("⚠️ No Google accounts connected")
                 if st.button("🔗 Connect Google Account", key="google_connect"):
-                    # Placeholder for OAuth flow
-                    st.info("Google OAuth flow - to be implemented in task 2.3")
+                    start_google_oauth()
 
             st.divider()
 
@@ -412,9 +583,17 @@ async def main() -> None:
                             else:
                                 results.append("❌ Todoist: Failed")
 
-                        # Test Google accounts if connected (placeholder)
+                        # Test Google accounts if connected
                         if google_accounts:
-                            results.append("⚠️ Google Calendar: Testing not implemented")
+                            for account in google_accounts:
+                                if test_google_connection(account["email"]):
+                                    results.append(
+                                        f"✅ Google ({account['email']}): Working"
+                                    )
+                                else:
+                                    results.append(
+                                        f"❌ Google ({account['email']}): Failed"
+                                    )
 
                         if results:
                             for result in results:

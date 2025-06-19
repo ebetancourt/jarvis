@@ -37,6 +37,16 @@ class TodoistConfig:
     scope: str = "data:read_write"
 
 
+@dataclass
+class GoogleConfig:
+    """Google OAuth configuration."""
+
+    client_id: str
+    client_secret: str
+    redirect_uri: str
+    scope: str = "https://www.googleapis.com/auth/calendar.readonly"
+
+
 class OAuthManager:
     """Manages OAuth flows and token storage for multiple services."""
 
@@ -108,6 +118,17 @@ class OAuthManager:
         # This is a placeholder for future implementation if they add support
         return None
 
+    def refresh_google_token(self, refresh_token: str) -> Optional[OAuthToken]:
+        """
+        Refresh a Google token using a refresh token.
+        """
+        google_config = get_google_config()
+        if not google_config:
+            return None
+
+        google_oauth = GoogleOAuth(google_config, self)
+        return google_oauth.refresh_token(refresh_token)
+
     def get_valid_token(self, service: str, user_id: str) -> Optional[OAuthToken]:
         """Get a valid token, refreshing if necessary."""
         token = self.get_token(service, user_id)
@@ -118,13 +139,37 @@ class OAuthManager:
             return token
 
         # Try to refresh if possible
-        if token.refresh_token and service == "todoist":
-            refreshed = self.refresh_todoist_token(token.refresh_token)
+        if token.refresh_token:
+            refreshed = None
+            if service == "todoist":
+                refreshed = self.refresh_todoist_token(token.refresh_token)
+            elif service == "google":
+                refreshed = self.refresh_google_token(token.refresh_token)
+
             if refreshed:
                 self.store_token(service, user_id, refreshed)
                 return refreshed
 
         return None
+
+    def get_all_tokens(self, service: str) -> Dict[str, OAuthToken]:
+        """Get all tokens for a specific service."""
+        return self._tokens.get(service, {}).copy()
+
+    def get_user_accounts(self, service: str) -> list[Dict[str, Any]]:
+        """Get list of connected accounts for a service with user info."""
+        accounts = []
+        tokens = self.get_all_tokens(service)
+        for user_id, token in tokens.items():
+            if token.user_info:
+                account = {
+                    "user_id": user_id,
+                    "email": token.user_info.get("email", "Unknown"),
+                    "name": token.user_info.get("name", "Unknown"),
+                    "is_valid": self.is_token_valid(token),
+                }
+                accounts.append(account)
+        return accounts
 
 
 class TodoistOAuth:
@@ -243,6 +288,176 @@ class TodoistOAuth:
             return False
 
 
+class GoogleOAuth:
+    """Handles Google OAuth 2.0 authentication flow for Calendar API."""
+
+    def __init__(self, config: GoogleConfig, oauth_manager: OAuthManager):
+        self.config = config
+        self.oauth_manager = oauth_manager
+        self.auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
+        self.token_url = "https://oauth2.googleapis.com/token"
+        self.revoke_url = "https://oauth2.googleapis.com/revoke"
+        self.userinfo_url = "https://www.googleapis.com/oauth2/v1/userinfo"
+
+    def get_authorization_url(self, state: Optional[str] = None) -> tuple[str, str]:
+        """
+        Generate the authorization URL for Google OAuth.
+
+        Returns:
+            tuple: (authorization_url, state)
+        """
+        if not state:
+            state = secrets.token_urlsafe(32)
+
+        params = {
+            "client_id": self.config.client_id,
+            "redirect_uri": self.config.redirect_uri,
+            "scope": self.config.scope,
+            "response_type": "code",
+            "state": state,
+            "access_type": "offline",  # Request refresh token
+            "prompt": "consent",  # Force consent screen to get refresh token
+            "include_granted_scopes": "true",  # Incremental authorization
+        }
+
+        auth_url = f"{self.auth_url}?{urlencode(params)}"
+        return auth_url, state
+
+    def exchange_code_for_token(self, code: str, state: str) -> Optional[OAuthToken]:
+        """
+        Exchange authorization code for access token.
+
+        Args:
+            code: Authorization code from callback
+            state: State parameter for CSRF protection
+
+        Returns:
+            OAuthToken if successful, None otherwise
+        """
+        try:
+            data = {
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": self.config.redirect_uri,
+            }
+
+            response = requests.post(self.token_url, data=data, timeout=10)
+            response.raise_for_status()
+
+            token_data = response.json()
+
+            # Calculate expiration time
+            expires_at = None
+            if "expires_in" in token_data:
+                expires_at = time.time() + int(token_data["expires_in"])
+
+            # Get user info
+            user_info = self._get_user_info(token_data["access_token"])
+
+            return OAuthToken(
+                access_token=token_data["access_token"],
+                token_type=token_data.get("token_type", "Bearer"),
+                refresh_token=token_data.get("refresh_token"),
+                expires_at=expires_at,
+                scope=token_data.get("scope", self.config.scope),
+                user_info=user_info,
+            )
+
+        except requests.RequestException as e:
+            print(f"Error exchanging code for token: {e}")
+            return None
+        except (KeyError, json.JSONDecodeError, ValueError) as e:
+            print(f"Error parsing token response: {e}")
+            return None
+
+    def refresh_token(self, refresh_token: str) -> Optional[OAuthToken]:
+        """
+        Refresh an access token using a refresh token.
+
+        Args:
+            refresh_token: The refresh token
+
+        Returns:
+            OAuthToken if successful, None otherwise
+        """
+        try:
+            data = {
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+
+            response = requests.post(self.token_url, data=data, timeout=10)
+            response.raise_for_status()
+
+            token_data = response.json()
+
+            # Calculate expiration time
+            expires_at = None
+            if "expires_in" in token_data:
+                expires_at = time.time() + int(token_data["expires_in"])
+
+            # Use existing refresh token if not provided in response
+            new_refresh_token = token_data.get("refresh_token", refresh_token)
+
+            # Get user info with new access token
+            user_info = self._get_user_info(token_data["access_token"])
+
+            return OAuthToken(
+                access_token=token_data["access_token"],
+                token_type=token_data.get("token_type", "Bearer"),
+                refresh_token=new_refresh_token,
+                expires_at=expires_at,
+                scope=token_data.get("scope", self.config.scope),
+                user_info=user_info,
+            )
+
+        except requests.RequestException as e:
+            print(f"Error refreshing token: {e}")
+            return None
+        except (KeyError, json.JSONDecodeError, ValueError) as e:
+            print(f"Error parsing refresh response: {e}")
+            return None
+
+    def _get_user_info(self, access_token: str) -> Optional[Dict[str, Any]]:
+        """Get user information from Google API."""
+        try:
+            headers = {"Authorization": f"Bearer {access_token}"}
+            response = requests.get(self.userinfo_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error getting user info: {e}")
+            return None
+
+    def test_token(self, token: OAuthToken) -> bool:
+        """Test if a token is working by making an API call."""
+        try:
+            headers = {"Authorization": f"Bearer {token.access_token}"}
+            # Test with Calendar API user info endpoint
+            response = requests.get(
+                "https://www.googleapis.com/calendar/v3/users/me/settings",
+                headers=headers,
+                timeout=10,
+            )
+            return response.status_code == 200
+        except requests.RequestException:
+            return False
+
+    def revoke_token(self, token: OAuthToken) -> bool:
+        """Revoke an access token."""
+        try:
+            data = {"token": token.access_token}
+            response = requests.post(self.revoke_url, data=data, timeout=10)
+            return response.status_code == 200
+        except requests.RequestException as e:
+            print(f"Error revoking token: {e}")
+            return False
+
+
 def get_todoist_config() -> Optional[TodoistConfig]:
     """Get Todoist OAuth configuration from environment variables."""
     client_id = os.getenv("TODOIST_CLIENT_ID")
@@ -255,6 +470,22 @@ def get_todoist_config() -> Optional[TodoistConfig]:
         return None
 
     return TodoistConfig(
+        client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri
+    )
+
+
+def get_google_config() -> Optional[GoogleConfig]:
+    """Get Google OAuth configuration from environment variables."""
+    client_id = os.getenv("GOOGLE_CALENDAR_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET")
+    redirect_uri = os.getenv(
+        "GOOGLE_CALENDAR_REDIRECT_URI", "http://localhost:8501/oauth/google/callback"
+    )
+
+    if not client_id or not client_secret:
+        return None
+
+    return GoogleConfig(
         client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri
     )
 
