@@ -7,8 +7,16 @@ logic removed from the Streamlit frontend in Task 2.8.
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
+
+from service.oauth_service import (
+    get_oauth_service,
+    OAuthService,
+    OAuthServiceError,
+    OAuthConfigurationError,
+    OAuthTokenError,
+)
 
 
 # Response Models
@@ -112,11 +120,20 @@ async def start_todoist_oauth(user_id: str) -> OAuthStartResponse:
     Raises:
         HTTPException: If OAuth configuration is missing or invalid
     """
-    # TODO: Implement in Task 2.10 with OAuth service layer
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
-    )
+    oauth_service = get_oauth_service()
+    try:
+        result = oauth_service.start_todoist_oauth(user_id)
+        return OAuthStartResponse(
+            authorization_url=result["authorization_url"],
+            state=result["state"],
+            message=result["message"],
+        )
+    except OAuthConfigurationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except OAuthServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
 @router.post("/google/start", response_model=OAuthStartResponse)
