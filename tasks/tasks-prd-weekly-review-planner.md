@@ -64,20 +64,51 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 2.9 Create OAuth API endpoints in FastAPI backend service
   - [x] 2.10 Implement OAuth service layer in backend for proper separation
   - [x] 2.11 Create OAuth management API routes (start, callback, status, disconnect)
-  - [ ] 2.12 Update Streamlit OAuth Management button to use API endpoints
+  - [x] 2.12 Update Streamlit OAuth Management button to use API endpoints
   - [ ] 2.13 Test and validate client-server OAuth flow end-to-end
 
-## Task 2.8: Revert Streamlit App to Thin Client Architecture
+## Task 2.12: Update Streamlit OAuth Management Button to Use API Endpoints
 
-**Objective:** Remove all embedded OAuth logic from Streamlit app and restore proper client-server separation
+**Objective:** Redesign OAuth Management UI to use API endpoints instead of embedded logic
 
-**Key Actions:**
-- Remove `common.oauth_manager` imports and dependencies from `src/streamlit_app.py`
-- Remove embedded OAuth functions: `start_todoist_oauth()`, `disconnect_todoist()`, `start_google_oauth()`, etc.
-- Remove OAuth callback handling logic from Streamlit app
-- Remove calendar management functions from Streamlit app
-- Clean up Docker dependencies in client group (remove Google API libs, etc.)
-- Restore Streamlit app to pure UI/HTTP client functionality
+**Key Changes:**
+- Replace embedded OAuth functions with HTTP client calls to backend API
+- Update OAuth status loading to call `/api/oauth/status/{user_id}`
+- Replace OAuth connection flows with API redirects to `/api/oauth/{service}/start`
+- Update account management to use API disconnect/refresh endpoints
+- Replace calendar management with API calls to `/api/calendars/*`
+- Add proper error handling for API call failures
+- Maintain existing UI/UX while using API backend
+
+**Actions Completed:**
+- **Added HTTP Client Functions**: Created comprehensive client functions to call backend OAuth API endpoints:
+  - `call_oauth_status_api()` - Get OAuth status for user
+  - `call_oauth_start_api()` - Start OAuth flows for services
+  - `call_oauth_disconnect_api()` - Disconnect OAuth services
+  - `call_oauth_refresh_api()` - Refresh OAuth tokens
+  - `call_oauth_health_api()` - Get OAuth health status
+  - `call_oauth_summary_api()` - Get service summaries
+  - `call_calendars_api()` - Get calendar data
+  - `call_calendar_summary_api()` - Get calendar summaries
+
+- **Replaced Function Calls**: Updated all OAuth Configuration section function calls:
+  - Replaced `get_account_health_display()` with `call_oauth_health_api()`
+  - Replaced `test_todoist_connection()` with `test_oauth_connection()`
+  - Replaced `refresh_todoist_account()` with `refresh_todoist_token()`
+  - Replaced `disconnect_todoist()` with `disconnect_todoist_account()`
+  - Replaced `start_todoist_oauth()` with `start_todoist_oauth_flow()`
+  - And similar replacements for Google Calendar functions
+
+- **Added OAuth Status Loading**: Added `load_oauth_status_from_api()` call in main function to load OAuth status from backend
+- **Simplified Calendar Interface**: Created simplified calendar configuration interface that shows basic info while complex filtering waits for full backend implementation
+- **Error Handling**: Added proper error handling for API call failures with user-friendly messages
+- **Maintained UI/UX**: Preserved existing OAuth Configuration popover interface and user experience
+
+**Architecture Achievement:**
+- Streamlit app now properly calls backend API endpoints instead of embedded OAuth logic
+- Clean separation between frontend UI and backend business logic restored
+- OAuth Configuration interface functional with backend API integration
+- Ready for Task 2.13: End-to-end testing of client-server OAuth flow
 
 ## Task 2.9: Create OAuth API Endpoints in FastAPI Backend Service
 
@@ -116,19 +147,6 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - Implement CORS handling for OAuth callback redirects
 - Add comprehensive error handling with proper HTTP status codes
 - Create OpenAPI documentation for OAuth endpoints
-
-## Task 2.12: Update Streamlit OAuth Management Button
-
-**Objective:** Redesign OAuth Management UI to use API endpoints instead of embedded logic
-
-**Key Changes:**
-- Replace embedded OAuth functions with HTTP client calls to backend API
-- Update OAuth status loading to call `/api/oauth/status/{user_id}`
-- Replace OAuth connection flows with API redirects to `/api/oauth/{service}/start`
-- Update account management to use API disconnect/refresh endpoints
-- Replace calendar management with API calls to `/api/calendars/*`
-- Add proper error handling for API call failures
-- Maintain existing UI/UX while using API backend
 
 ## Task 2.13: Test and Validate Client-Server OAuth Flow
 
