@@ -1,9 +1,7 @@
 from datetime import datetime
 
 from langchain_core.tools import tool
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
-from langgraph.store.memory import InMemoryStore
 
 
 # Session management and context tools for memory handling
@@ -720,4 +718,4 @@ By the end of each session, users should feel:
 Guide them through this sacred time with patience, ensuring thoroughness without \
 overwhelm. The Weekly Review is their weekly appointment with themselves to regain \
 control and perspective.""",
-).compile(checkpointer=MemorySaver(), store=InMemoryStore())
+)

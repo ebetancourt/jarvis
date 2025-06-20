@@ -441,11 +441,7 @@ async def main() -> None:
     # Get or create user ID
     user_id = get_or_create_user_id()
 
-    # Load OAuth status from backend API
-    load_oauth_status_from_api(user_id)
-
-    # TODO: OAuth callback handling will be done via backend API
-
+    # Initialize agent client first
     if "agent_client" not in st.session_state:
         load_dotenv()
         agent_url = os.getenv("AGENT_URL")
@@ -461,6 +457,11 @@ async def main() -> None:
             st.markdown("The service might be booting up. Try again in a few seconds.")
             st.stop()
     agent_client: AgentClient = st.session_state.agent_client
+
+    # Load OAuth status from backend API (requires agent_client to be initialized)
+    load_oauth_status_from_api(user_id)
+
+    # TODO: OAuth callback handling will be done via backend API
 
     if "thread_id" not in st.session_state:
         thread_id = st.query_params.get("thread_id")
