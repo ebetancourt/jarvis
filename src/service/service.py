@@ -27,6 +27,7 @@ from agents import DEFAULT_AGENT, get_agent, get_all_agent_info
 from core import settings
 from memory import initialize_database, initialize_store
 from plugins.obsidian.route import router as obsidian_router
+from service.routes.oauth import router as oauth_router, calendar_router
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -400,3 +401,5 @@ app.include_router(
     prefix="/obsidian",
     tags=["obsidian", "plugin"],
 )
+app.include_router(oauth_router)
+app.include_router(calendar_router)

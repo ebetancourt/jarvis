@@ -7,7 +7,9 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - `src/agents/weekly_review_agent.py` - Main agent implementation with GTD-structured conversational interface, comprehensive areas of responsibility, David Allen's 6-step weekly review process, memory/context handling with session management tools, and graceful sparse data handling with adaptive review approaches.
 - `src/agents/agents.py` - Agent registry with weekly review agent added as "weekly-review-agent".
 - `src/streamlit_app.py` - Thin client Streamlit app with OAuth Management UI that calls backend API endpoints.
-- `src/service/routes/oauth.py` - FastAPI OAuth management routes and endpoints.
+- `src/service/routes/__init__.py` - Routes package for organizing API endpoints.
+- `src/service/routes/oauth.py` - FastAPI OAuth management routes and endpoints with comprehensive API structure.
+- `src/service/service.py` - Main FastAPI service updated to include OAuth and calendar routers.
 - `src/service/oauth_service.py` - OAuth service layer for backend business logic.
 - `src/schema/oauth_models.py` - Pydantic models for OAuth API requests and responses.
 - `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
@@ -59,7 +61,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 2.6 Create calendar filtering options to exclude irrelevant calendars
   - [x] 2.7 Implement settings persistence to database for all OAuth configurations (Todoist + Google)
   - [x] 2.8 Revert Streamlit app to thin client architecture (remove embedded OAuth logic)
-  - [ ] 2.9 Create OAuth API endpoints in FastAPI backend service
+  - [x] 2.9 Create OAuth API endpoints in FastAPI backend service
   - [ ] 2.10 Implement OAuth service layer in backend for proper separation
   - [ ] 2.11 Create OAuth management API routes (start, callback, status, disconnect)
   - [ ] 2.12 Update Streamlit OAuth Management button to use API endpoints
