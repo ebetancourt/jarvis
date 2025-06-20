@@ -1103,6 +1103,46 @@ async def main() -> None:
                     if google_accounts:
                         st.write("**Google Calendar Service:**")
                         show_service_summary("google")
+                        st.divider()
+
+                    # Database information
+                    st.write("**🗄️ OAuth Database:**")
+                    db_info = oauth_manager.get_database_info()
+
+                    if db_info.get("database_enabled"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Storage Type", "Database")
+                            if "tokens_by_service" in db_info:
+                                for service, count in db_info[
+                                    "tokens_by_service"
+                                ].items():
+                                    st.metric(f"{service.title()} Tokens", count)
+
+                        with col2:
+                            if "calendar_preferences" in db_info:
+                                cal_stats = db_info["calendar_preferences"]
+                                if cal_stats:
+                                    st.metric(
+                                        "Users with Calendars",
+                                        cal_stats.get("users", 0),
+                                    )
+                                    st.metric(
+                                        "Total Calendars",
+                                        cal_stats.get("total_calendars", 0),
+                                    )
+                                    st.metric(
+                                        "Enabled Calendars",
+                                        cal_stats.get("enabled_calendars", 0),
+                                    )
+
+                            # Database size
+                            if "database_size_bytes" in db_info:
+                                size_mb = db_info["database_size_bytes"] / 1024 / 1024
+                                st.metric("Database Size", f"{size_mb:.2f} MB")
+                    else:
+                        st.info("💾 Using file-based storage (legacy mode)")
+                        st.caption("OAuth tokens stored in JSON files")
 
             # Test Connection Button
             if integrations_connected > 0:

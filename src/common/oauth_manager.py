@@ -14,6 +14,8 @@ from typing import Optional, Dict, Any
 import requests
 from urllib.parse import urlencode
 
+from memory.oauth_db import oauth_db
+
 
 @dataclass
 class OAuthToken:
@@ -53,13 +55,22 @@ class GoogleConfig:
 class OAuthManager:
     """Manages OAuth flows and token storage for multiple services."""
 
-    def __init__(self, storage_path: str = "oauth_tokens.json"):
+    def __init__(
+        self, storage_path: str = "oauth_tokens.json", use_database: bool = True
+    ):
         self.storage_path = storage_path
         self.calendar_prefs_path = "calendar_preferences.json"
+        self.use_database = use_database
         self._tokens: Dict[str, Dict[str, OAuthToken]] = {}
         self._calendar_preferences: Dict[str, Dict[str, Any]] = {}
-        self._load_tokens()
-        self._load_calendar_preferences()
+
+        if use_database:
+            # Check for migration from files to database
+            self._migrate_from_files_if_needed()
+        else:
+            # Legacy file-based storage
+            self._load_tokens()
+            self._load_calendar_preferences()
 
     def _load_tokens(self) -> None:
         """Load tokens from persistent storage."""
@@ -113,28 +124,84 @@ class OAuthManager:
         except Exception as e:
             print(f"Error saving calendar preferences: {e}")
 
+    def _migrate_from_files_if_needed(self) -> None:
+        """Migrate from file-based storage to database if files exist."""
+        # Check if migration is needed and hasn't been done
+        migration_done = oauth_db.get_oauth_metadata("migration_completed")
+
+        if migration_done == "true":
+            return  # Already migrated
+
+        # Attempt migration
+        tokens_migrated, prefs_migrated = oauth_db.migrate_from_files(
+            tokens_file=self.storage_path, prefs_file=self.calendar_prefs_path
+        )
+
+        if tokens_migrated > 0 or prefs_migrated > 0:
+            print(
+                f"✅ OAuth Migration completed: {tokens_migrated} tokens, "
+                f"{prefs_migrated} calendar preferences migrated to database"
+            )
+
+        # Mark migration as completed
+        oauth_db.set_oauth_metadata("migration_completed", "true")
+
     def store_token(self, service: str, user_id: str, token: OAuthToken) -> None:
         """Store an OAuth token for a user and service."""
-        if service not in self._tokens:
-            self._tokens[service] = {}
-        self._tokens[service][user_id] = token
-        self._save_tokens()
+        if self.use_database:
+            oauth_db.store_oauth_token(
+                service=service,
+                user_id=user_id,
+                access_token=token.access_token,
+                token_type=token.token_type,
+                refresh_token=token.refresh_token,
+                expires_at=token.expires_at,
+                scope=token.scope,
+                user_info=token.user_info,
+            )
+        else:
+            # Legacy file-based storage
+            if service not in self._tokens:
+                self._tokens[service] = {}
+            self._tokens[service][user_id] = token
+            self._save_tokens()
 
     def get_token(self, service: str, user_id: str) -> Optional[OAuthToken]:
         """Retrieve an OAuth token for a user and service."""
-        return self._tokens.get(service, {}).get(user_id)
+        if self.use_database:
+            token_data = oauth_db.get_oauth_token(service, user_id)
+            if token_data:
+                return OAuthToken(
+                    access_token=token_data["access_token"],
+                    token_type=token_data["token_type"],
+                    refresh_token=token_data["refresh_token"],
+                    expires_at=token_data["expires_at"],
+                    scope=token_data["scope"],
+                    user_info=token_data["user_info"],
+                )
+            return None
+        else:
+            # Legacy file-based storage
+            return self._tokens.get(service, {}).get(user_id)
 
     def remove_token(self, service: str, user_id: str) -> None:
         """Remove an OAuth token for a user and service."""
-        if service in self._tokens and user_id in self._tokens[service]:
-            del self._tokens[service][user_id]
-            if not self._tokens[service]:  # Remove service if no users
-                del self._tokens[service]
-            self._save_tokens()
-
+        if self.use_database:
+            oauth_db.remove_oauth_token(service, user_id)
             # Also remove calendar preferences for Google accounts
             if service == "google":
-                self.remove_calendar_preferences(user_id)
+                oauth_db.remove_calendar_preferences(user_id)
+        else:
+            # Legacy file-based storage
+            if service in self._tokens and user_id in self._tokens[service]:
+                del self._tokens[service][user_id]
+                if not self._tokens[service]:  # Remove service if no users
+                    del self._tokens[service]
+                self._save_tokens()
+
+                # Also remove calendar preferences for Google accounts
+                if service == "google":
+                    self.remove_calendar_preferences(user_id)
 
     def is_token_valid(self, token: OAuthToken) -> bool:
         """Check if a token is still valid (not expired)."""
@@ -186,7 +253,23 @@ class OAuthManager:
 
     def get_all_tokens(self, service: str) -> Dict[str, OAuthToken]:
         """Get all tokens for a specific service."""
-        return self._tokens.get(service, {}).copy()
+        if self.use_database:
+            token_list = oauth_db.get_all_oauth_tokens(service)
+            tokens_dict = {}
+            for token_data in token_list:
+                user_id = token_data["user_id"]
+                tokens_dict[user_id] = OAuthToken(
+                    access_token=token_data["access_token"],
+                    token_type=token_data["token_type"],
+                    refresh_token=token_data["refresh_token"],
+                    expires_at=token_data["expires_at"],
+                    scope=token_data["scope"],
+                    user_info=token_data["user_info"],
+                )
+            return tokens_dict
+        else:
+            # Legacy file-based storage
+            return self._tokens.get(service, {}).copy()
 
     def get_user_accounts(self, service: str) -> list[Dict[str, Any]]:
         """Get list of connected accounts for a service with user info."""
@@ -319,35 +402,49 @@ class OAuthManager:
         self, user_id: str, calendars: list[Dict[str, Any]]
     ) -> None:
         """Store calendar preferences for a Google account."""
-        self._calendar_preferences[user_id] = {
-            "calendars": calendars,
-            "updated_at": time.time(),
-        }
-        self._save_calendar_preferences()
+        if self.use_database:
+            oauth_db.store_calendar_preferences(user_id, calendars)
+        else:
+            # Legacy file-based storage
+            self._calendar_preferences[user_id] = {
+                "calendars": calendars,
+                "updated_at": time.time(),
+            }
+            self._save_calendar_preferences()
 
     def get_calendar_preferences(self, user_id: str) -> Optional[list[Dict[str, Any]]]:
         """Get calendar preferences for a Google account."""
-        prefs = self._calendar_preferences.get(user_id)
-        if prefs:
-            return prefs.get("calendars")
-        return None
+        if self.use_database:
+            return oauth_db.get_calendar_preferences(user_id)
+        else:
+            # Legacy file-based storage
+            prefs = self._calendar_preferences.get(user_id)
+            if prefs:
+                return prefs.get("calendars")
+            return None
 
     def update_calendar_enabled_status(
         self, user_id: str, calendar_id: str, enabled: bool
     ) -> bool:
         """Update the enabled status of a specific calendar."""
-        prefs = self._calendar_preferences.get(user_id)
-        if not prefs or "calendars" not in prefs:
+        if self.use_database:
+            return oauth_db.update_calendar_enabled_status(
+                user_id, calendar_id, enabled
+            )
+        else:
+            # Legacy file-based storage
+            prefs = self._calendar_preferences.get(user_id)
+            if not prefs or "calendars" not in prefs:
+                return False
+
+            for calendar in prefs["calendars"]:
+                if calendar.get("id") == calendar_id:
+                    calendar["enabled"] = enabled
+                    prefs["updated_at"] = time.time()
+                    self._save_calendar_preferences()
+                    return True
+
             return False
-
-        for calendar in prefs["calendars"]:
-            if calendar.get("id") == calendar_id:
-                calendar["enabled"] = enabled
-                prefs["updated_at"] = time.time()
-                self._save_calendar_preferences()
-                return True
-
-        return False
 
     def get_enabled_calendars(self, user_id: str) -> list[Dict[str, Any]]:
         """Get list of enabled calendars for a Google account."""
@@ -359,9 +456,13 @@ class OAuthManager:
 
     def remove_calendar_preferences(self, user_id: str) -> None:
         """Remove calendar preferences for a user (e.g., when disconnecting)."""
-        if user_id in self._calendar_preferences:
-            del self._calendar_preferences[user_id]
-            self._save_calendar_preferences()
+        if self.use_database:
+            oauth_db.remove_calendar_preferences(user_id)
+        else:
+            # Legacy file-based storage
+            if user_id in self._calendar_preferences:
+                del self._calendar_preferences[user_id]
+                self._save_calendar_preferences()
 
     def apply_calendar_filters(
         self, calendars: list[Dict[str, Any]], filters: Dict[str, Any]
@@ -565,6 +666,16 @@ class OAuthManager:
             access_role = calendar.get("access_role", "reader")
             stats["by_access"][access_role] = stats["by_access"].get(access_role, 0) + 1
 
+        return stats
+
+    def get_database_info(self) -> Dict[str, Any]:
+        """Get database information and statistics."""
+        if not self.use_database:
+            return {"database_enabled": False, "message": "Using file-based storage"}
+
+        stats = oauth_db.get_database_stats()
+        stats["database_enabled"] = True
+        stats["database_path"] = oauth_db.db_path
         return stats
 
 
