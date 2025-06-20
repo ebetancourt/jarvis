@@ -3,7 +3,7 @@ import os
 import urllib.parse
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Optional, Dict, Any
+# OAuth types removed - will use API responses directly
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -12,13 +12,6 @@ from pydantic import ValidationError
 from client import AgentClient, AgentClientError
 from schema import ChatHistory, ChatMessage
 from schema.task_data import TaskData, TaskDataStatus
-from common.oauth_manager import (
-    oauth_manager,
-    TodoistOAuth,
-    GoogleOAuth,
-    get_todoist_config,
-    get_google_config,
-)
 
 # A Streamlit app for interacting with the langgraph agent via a simple chat interface.
 # The app has three main functions which are all run async:
@@ -60,469 +53,28 @@ def get_or_create_user_id() -> str:
     return user_id
 
 
-def handle_oauth_callback():
-    """Handle OAuth callback for Todoist and Google."""
-    # Check for OAuth callback parameters
-    if "code" in st.query_params and "state" in st.query_params:
-        code = st.query_params["code"]
-        state = st.query_params["state"]
-
-        # Verify state matches what we stored
-        if "oauth_state" in st.session_state and st.session_state.oauth_state == state:
-            user_id = get_or_create_user_id()
-
-            # Check which service we're handling (based on state or URL)
-            if "oauth_service" in st.session_state:
-                service = st.session_state.oauth_service
-            elif "google" in st.query_params.get("state", ""):
-                service = "google"
-            else:
-                service = "todoist"  # Default to Todoist for backward compatibility
-
-            if service == "todoist":
-                # Get Todoist config
-                todoist_config = get_todoist_config()
-                if todoist_config:
-                    # Initialize OAuth handler
-                    todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
-
-                    # Exchange code for token
-                    token = todoist_oauth.exchange_code_for_token(code, state)
-
-                    if token:
-                        # Store token for current user
-                        oauth_manager.store_token("todoist", user_id, token)
-
-                        # Update session state
-                        st.session_state.oauth_status["todoist"] = {
-                            "connected": True,
-                            "user_email": (
-                                token.user_info.get("email")
-                                if token.user_info
-                                else "Unknown"
-                            ),
-                        }
-
-                        # Clear OAuth state and URL params
-                        if "oauth_state" in st.session_state:
-                            del st.session_state.oauth_state
-                        if "oauth_service" in st.session_state:
-                            del st.session_state.oauth_service
-                        st.query_params.clear()
-
-                        st.success("✅ Successfully connected to Todoist!")
-                        st.rerun()
-                    else:
-                        st.error("❌ Failed to connect to Todoist. Please try again.")
-                else:
-                    st.error(
-                        "❌ Todoist OAuth configuration missing. "
-                        "Please check environment variables."
-                    )
-            elif service == "google":
-                # Get Google config
-                google_config = get_google_config()
-                if google_config:
-                    # Initialize OAuth handler
-                    google_oauth = GoogleOAuth(google_config, oauth_manager)
-
-                    # Exchange code for token
-                    token = google_oauth.exchange_code_for_token(code, state)
-
-                    if token:
-                        # Create unique user ID for this Google account
-                        google_email = token.user_info.get("email", "unknown")
-                        google_user_id = f"{user_id}_google_{google_email}"
-
-                        # Store token
-                        oauth_manager.store_token("google", google_user_id, token)
-
-                        # Clear OAuth state and URL params
-                        if "oauth_state" in st.session_state:
-                            del st.session_state.oauth_state
-                        if "oauth_service" in st.session_state:
-                            del st.session_state.oauth_service
-                        st.query_params.clear()
-
-                        st.success(
-                            f"✅ Successfully connected Google account: {google_email}!"
-                        )
-                        st.rerun()
-                    else:
-                        st.error("❌ Failed to connect to Google. Please try again.")
-                else:
-                    st.error(
-                        "❌ Google OAuth configuration missing. "
-                        "Please check environment variables."
-                    )
-        else:
-            st.error("❌ Invalid OAuth state. Please try again.")
-
-
-def load_oauth_status(user_id: str):
-    """Load OAuth status from stored tokens."""
-    if "oauth_status" not in st.session_state:
-        st.session_state.oauth_status = {
-            "todoist": {"connected": False, "user_email": None},
-            "google_accounts": [],
-        }
-
-    # Check if we have a valid Todoist token
-    todoist_token = oauth_manager.get_valid_token("todoist", user_id)
-    if todoist_token:
-        st.session_state.oauth_status["todoist"] = {
-            "connected": True,
-            "user_email": (
-                todoist_token.user_info.get("email")
-                if todoist_token.user_info
-                else "Connected"
-            ),
-        }
-    else:
-        st.session_state.oauth_status["todoist"] = {
-            "connected": False,
-            "user_email": None,
-        }
-
-    # Check for Google accounts
-    google_accounts = []
-    google_tokens = oauth_manager.get_all_tokens("google")
-    for google_user_id, token in google_tokens.items():
-        # Only include tokens that belong to this user
-        if google_user_id.startswith(user_id) and token.user_info:
-            # Get calendar summary for this account
-            calendar_summary = get_calendar_summary(google_user_id)
-
-            account_info = {
-                "user_id": google_user_id,
-                "email": token.user_info.get("email", "Unknown"),
-                "name": token.user_info.get("name", "Unknown"),
-                "is_valid": oauth_manager.is_token_valid(token),
-                "calendars_enabled": calendar_summary["enabled"],
-                "calendars_total": calendar_summary["total"],
-            }
-            google_accounts.append(account_info)
-
-    st.session_state.oauth_status["google_accounts"] = google_accounts
-
-
-def start_todoist_oauth():
-    """Start the Todoist OAuth flow."""
-    todoist_config = get_todoist_config()
-    if not todoist_config:
-        st.error(
-            "❌ Todoist OAuth configuration missing. Please set TODOIST_CLIENT_ID "
-            "and TODOIST_CLIENT_SECRET environment variables."
-        )
-        return
-
-    # Initialize OAuth handler
-    todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
-
-    # Generate authorization URL
-    auth_url, state = todoist_oauth.get_authorization_url()
-
-    # Store state for verification
-    st.session_state.oauth_state = state
-    st.session_state.oauth_service = "todoist"
-
-    # Redirect to authorization URL
-    st.markdown(
-        f'<a href="{auth_url}" target="_self">Click here to authorize Todoist access</a>',
-        unsafe_allow_html=True,
-    )
-    st.info(
-        "You will be redirected to Todoist to authorize access. "
-        "Please complete the authorization and return here."
-    )
-
-
-def disconnect_todoist():
-    """Disconnect Todoist account."""
-    user_id = get_or_create_user_id()
-
-    # Get token to revoke it
-    token = oauth_manager.get_token("todoist", user_id)
-    if token:
-        # Try to revoke the token
-        todoist_config = get_todoist_config()
-        if todoist_config:
-            todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
-            todoist_oauth.revoke_token(token)
-
-    # Remove token from storage
-    oauth_manager.remove_token("todoist", user_id)
-
-    # Update session state
-    st.session_state.oauth_status["todoist"] = {"connected": False, "user_email": None}
-
-    st.success("✅ Disconnected from Todoist")
-
-
-def start_google_oauth():
-    """Start the Google OAuth flow."""
-    google_config = get_google_config()
-    if not google_config:
-        st.error(
-            "❌ Google OAuth configuration missing. Please set "
-            "GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET "
-            "environment variables."
-        )
-        return
-
-    # Initialize OAuth handler
-    google_oauth = GoogleOAuth(google_config, oauth_manager)
-
-    # Generate authorization URL
-    auth_url, state = google_oauth.get_authorization_url()
-
-    # Store state for verification
-    st.session_state.oauth_state = state
-    st.session_state.oauth_service = "google"
-
-    # Redirect to authorization URL
-    st.markdown(
-        f'<a href="{auth_url}" target="_self">'
-        "Click here to authorize Google Calendar access</a>",
-        unsafe_allow_html=True,
-    )
-    st.info(
-        "You will be redirected to Google to authorize access. "
-        "Please complete the authorization and return here."
-    )
-
-
-def disconnect_google_account(account_email: str):
-    """Disconnect a specific Google account."""
-    user_id = get_or_create_user_id()
-
-    # Find all Google tokens for this user
-    google_tokens = oauth_manager.get_all_tokens("google")
-    account_removed = False
-
-    for google_user_id, token in google_tokens.items():
-        if (
-            token.user_info
-            and token.user_info.get("email") == account_email
-            and google_user_id.startswith(user_id)
-        ):
-            # Try to revoke the token
-            google_config = get_google_config()
-            if google_config:
-                google_oauth = GoogleOAuth(google_config, oauth_manager)
-                google_oauth.revoke_token(token)
-
-            # Remove token from storage
-            oauth_manager.remove_token("google", google_user_id)
-            account_removed = True
-            break
-
-    if account_removed:
-        st.success(f"✅ Disconnected Google account: {account_email}")
-    else:
-        st.error(f"❌ Could not find account: {account_email}")
-
-
-def test_google_connection(account_email: str) -> bool:
-    """Test a specific Google connection."""
-    user_id = get_or_create_user_id()
-
-    # Find the token for this account
-    google_tokens = oauth_manager.get_all_tokens("google")
-    for google_user_id, token in google_tokens.items():
-        if (
-            token.user_info
-            and token.user_info.get("email") == account_email
-            and google_user_id.startswith(user_id)
-        ):
-            # Get valid token (will refresh if needed)
-            valid_token = oauth_manager.get_valid_token("google", google_user_id)
-            if not valid_token:
-                st.error(f"❌ No valid Google token for {account_email}")
-                return False
-
-            # Test the token
-            google_config = get_google_config()
-            if google_config:
-                google_oauth = GoogleOAuth(google_config, oauth_manager)
-                if google_oauth.test_token(valid_token):
-                    st.success(
-                        f"✅ Google Calendar connection working for {account_email}!"
-                    )
-                    return True
-                else:
-                    st.error(
-                        f"❌ Google Calendar connection failed for {account_email}"
-                    )
-                    return False
-
-    st.error(f"❌ Google account {account_email} not found")
-    return False
-
-
-def refresh_google_account(google_user_id: str) -> bool:
-    """Refresh tokens for a Google account."""
-    with st.spinner("Refreshing Google account..."):
-        success = oauth_manager.refresh_account_token("google", google_user_id)
-        if success:
-            st.success("✅ Google account refreshed successfully!")
-            return True
-        else:
-            st.error("❌ Failed to refresh Google account. May need to reconnect.")
-            return False
-
-
-def refresh_todoist_account() -> bool:
-    """Refresh tokens for Todoist account."""
-    user_id = get_or_create_user_id()
-    with st.spinner("Refreshing Todoist account..."):
-        success = oauth_manager.refresh_account_token("todoist", user_id)
-        if success:
-            st.success("✅ Todoist account refreshed successfully!")
-            return True
-        else:
-            st.error("❌ Failed to refresh Todoist account. May need to reconnect.")
-            return False
-
-
-def get_account_health_display(service: str, user_id: str) -> Dict[str, Any]:
-    """Get account health information for display."""
-    health = oauth_manager.get_account_health(service, user_id)
-
-    # Add display-friendly information
-    status_icons = {
-        "healthy": "🟢",
-        "expiring_soon": "🟡",
-        "expired_refreshable": "🟠",
-        "expired": "🔴",
-        "invalid": "🔴",
-        "disconnected": "⚫",
-        "unknown": "⚪",
-    }
-
-    health["icon"] = status_icons.get(health["status"], "⚪")
-
-    if health.get("expires_in"):
-        expires_in = health["expires_in"]
-        if expires_in > 86400:  # More than 1 day
-            health["expires_display"] = f"{int(expires_in/86400)} days"
-        elif expires_in > 3600:  # More than 1 hour
-            health["expires_display"] = f"{int(expires_in/3600)} hours"
-        elif expires_in > 60:  # More than 1 minute
-            health["expires_display"] = f"{int(expires_in/60)} minutes"
-        else:
-            health["expires_display"] = "Soon"
-
-    return health
-
-
-def show_service_summary(service: str):
-    """Display service summary information."""
-    summary = oauth_manager.get_service_summary(service)
-
-    service_name = service.title()
-    total = summary["total_accounts"]
-    healthy = summary["healthy_accounts"]
-
-    if total == 0:
-        st.info(f"No {service_name} accounts connected")
-        return
-
-    status_color = "🟢" if summary["service_status"] == "healthy" else "🟡"
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Accounts", total)
-    with col2:
-        st.metric(
-            "Healthy", healthy, delta=None if healthy == total else f"-{total-healthy}"
-        )
-    with col3:
-        st.write(f"**Status:** {status_color} {summary['service_status'].title()}")
-
-    if summary["expired_accounts"] > 0:
-        st.warning(f"⚠️ {summary['expired_accounts']} account(s) need attention")
-
-
-def fetch_google_calendars(google_user_id: str) -> Optional[list[Dict[str, Any]]]:
-    """Fetch calendars for a specific Google account."""
-    # Get valid token
-    valid_token = oauth_manager.get_valid_token("google", google_user_id)
-    if not valid_token:
-        st.error("❌ No valid Google token found")
-        return None
-
-    # Get Google OAuth handler
-    google_config = get_google_config()
-    if not google_config:
-        st.error("❌ Google OAuth configuration missing")
-        return None
-
-    google_oauth = GoogleOAuth(google_config, oauth_manager)
-    calendars = google_oauth.get_calendars(valid_token)
-
-    if calendars:
-        # Merge with stored preferences
-        stored_prefs = oauth_manager.get_calendar_preferences(google_user_id)
-        if stored_prefs:
-            # Update calendars with stored enabled/disabled state
-            stored_calendar_map = {cal["id"]: cal for cal in stored_prefs}
-            for calendar in calendars:
-                stored_cal = stored_calendar_map.get(calendar["id"])
-                if stored_cal:
-                    calendar["enabled"] = stored_cal.get("enabled", True)
-
-        # Store updated preferences
-        oauth_manager.store_calendar_preferences(google_user_id, calendars)
-
-    return calendars
-
-
-def update_calendar_selection(google_user_id: str, calendar_id: str, enabled: bool):
-    """Update the enabled status of a calendar."""
-    success = oauth_manager.update_calendar_enabled_status(
-        google_user_id, calendar_id, enabled
-    )
-    if success:
-        st.success(f"✅ Calendar {'enabled' if enabled else 'disabled'}")
-    else:
-        st.error("❌ Failed to update calendar selection")
-
-
-def get_calendar_summary(google_user_id: str) -> Dict[str, int]:
-    """Get summary of enabled vs total calendars for a Google account."""
-    calendars = oauth_manager.get_calendar_preferences(google_user_id)
-    if not calendars:
-        return {"enabled": 0, "total": 0}
-
-    enabled_count = sum(1 for cal in calendars if cal.get("enabled", True))
-    total_count = len(calendars)
-
-    return {"enabled": enabled_count, "total": total_count}
-
-
-def test_todoist_connection():
-    """Test the Todoist connection."""
-    user_id = get_or_create_user_id()
-    token = oauth_manager.get_valid_token("todoist", user_id)
-
-    if not token:
-        st.error("❌ No valid Todoist token found")
-        return False
-
-    # Test the token
-    todoist_config = get_todoist_config()
-    if todoist_config:
-        todoist_oauth = TodoistOAuth(todoist_config, oauth_manager)
-        if todoist_oauth.test_token(token):
-            st.success("✅ Todoist connection is working!")
-            return True
-        else:
-            st.error("❌ Todoist connection failed")
-            return False
-
-    st.error("❌ Todoist configuration missing")
-    return False
+# OAuth callback handling will be moved to backend API
+
+
+# OAuth status loading will be handled via API calls to backend
+
+
+# TODO: Replace with API calls to backend service
+# The following OAuth functions will be reimplemented as HTTP client calls:
+# - start_google_oauth() -> POST /api/oauth/google/start
+# - start_todoist_oauth() -> POST /api/oauth/todoist/start
+# - disconnect_google_account() -> DELETE /api/oauth/disconnect/google/{user_id}
+# - disconnect_todoist() -> DELETE /api/oauth/disconnect/todoist/{user_id}
+# - test_google_connection() -> GET /api/oauth/test/google/{user_id}
+# - test_todoist_connection() -> GET /api/oauth/test/todoist/{user_id}
+# - refresh_google_account() -> POST /api/oauth/refresh/google/{user_id}
+# - refresh_todoist_account() -> POST /api/oauth/refresh/todoist/{user_id}
+# - get_account_health_display() -> GET /api/oauth/health/{service}/{user_id}
+# - show_service_summary() -> GET /api/oauth/summary/{service}
+# - fetch_google_calendars() -> GET /api/calendars/{user_id}
+# - update_calendar_selection() -> PUT /api/calendars/{user_id}/preferences
+# - get_calendar_summary() -> GET /api/calendars/{user_id}/summary
+# - load_oauth_status() -> GET /api/oauth/status/{user_id}
 
 
 async def main() -> None:
@@ -552,11 +104,7 @@ async def main() -> None:
     # Get or create user ID
     user_id = get_or_create_user_id()
 
-    # Handle OAuth callback if present
-    handle_oauth_callback()
-
-    # Load OAuth status from stored tokens
-    load_oauth_status(user_id)
+    # TODO: OAuth callback handling will be done via backend API
 
     if "agent_client" not in st.session_state:
         load_dotenv()
@@ -947,94 +495,99 @@ async def main() -> None:
                                             )
                                             st.rerun()
 
-                                    # Show filter status
-                                    if len(display_calendars) < len(all_calendars):
-                                        st.info(
-                                            f"🔍 Showing {len(display_calendars)} of "
-                                            f"{len(all_calendars)} calendars (filtered)"
-                                        )
-
-                                    st.divider()
-
-                                    # Calendar list with type indicators
+                                    # Calendar list with filtering
                                     st.write("**📋 Calendar Selection:**")
 
-                                    for cal_idx, calendar in enumerate(
+                                    # Categories for better organization
+                                    categories = oauth_manager.categorize_calendars(
                                         display_calendars
-                                    ):
-                                        col_check, col_info, col_type = st.columns(
-                                            [1, 3, 1]
-                                        )
+                                    )
 
-                                        with col_check:
-                                            current_enabled = calendar.get(
-                                                "enabled", True
-                                            )
-                                            enabled = st.checkbox(
-                                                "",
-                                                value=current_enabled,
-                                                key=f"cal_{account['user_id']}_{calendar['id']}",
-                                            )
+                                    # Display calendars by category
+                                    for category_name, calendars in categories.items():
+                                        if calendars:
+                                            with st.expander(
+                                                f"📁 {category_name} ({len(calendars)})",
+                                                expanded=category_name == "Primary",
+                                            ):
+                                                for calendar in calendars:
+                                                    col_check, col_info = st.columns(
+                                                        [1, 4]
+                                                    )
 
-                                            # Handle change detection
-                                            prev_key = f"cal_prev_{account['user_id']}_{calendar['id']}"
-                                            if prev_key not in st.session_state:
-                                                st.session_state[prev_key] = (
-                                                    current_enabled
-                                                )
+                                                    with col_check:
+                                                        enabled = st.checkbox(
+                                                            "",
+                                                            value=calendar.get(
+                                                                "enabled", True
+                                                            ),
+                                                            key=f"cal_{account['user_id']}_{calendar['id']}",
+                                                        )
 
-                                            prev_enabled = st.session_state[prev_key]
-                                            if enabled != prev_enabled:
-                                                update_calendar_selection(
-                                                    account["user_id"],
-                                                    calendar["id"],
-                                                    enabled,
-                                                )
-                                                st.session_state[prev_key] = enabled
+                                                        # Update if changed
+                                                        if enabled != calendar.get(
+                                                            "enabled", True
+                                                        ):
+                                                            update_calendar_selection(
+                                                                account["user_id"],
+                                                                calendar["id"],
+                                                                enabled,
+                                                            )
 
-                                        with col_info:
-                                            calendar_name = calendar.get(
-                                                "summary", "Untitled"
-                                            )
-                                            if calendar.get("primary"):
-                                                calendar_name += " ⭐"
+                                                    with col_info:
+                                                        calendar_name = calendar.get(
+                                                            "summary",
+                                                            "Unnamed Calendar",
+                                                        )
+                                                        access_role = calendar.get(
+                                                            "accessRole", "unknown"
+                                                        )
 
-                                            st.write(f"**{calendar_name}**")
-                                            if calendar.get("description"):
-                                                st.caption(calendar["description"])
+                                                        if calendar.get(
+                                                            "primary", False
+                                                        ):
+                                                            calendar_name += (
+                                                                " (Primary)"
+                                                            )
 
-                                            # Show access role
-                                            access_role = calendar.get(
-                                                "access_role", "reader"
-                                            )
-                                            st.caption(f"Access: {access_role.title()}")
+                                                        st.write(f"**{calendar_name}**")
+                                                        st.caption(
+                                                            f"Access: {access_role} | "
+                                                            f"ID: {calendar['id'][:20]}..."
+                                                        )
 
-                                        with col_type:
-                                            cal_type = oauth_manager._get_calendar_type(
-                                                calendar
-                                            )
-                                            type_icons = {
-                                                "primary": "⭐",
-                                                "work": "💼",
-                                                "personal": "🏠",
-                                                "holiday": "🎉",
-                                                "shared": "👥",
-                                                "other": "📅",
-                                            }
-                                            st.write(
-                                                f"{type_icons.get(cal_type, '📅')} "
-                                                f"{cal_type.title()}"
-                                            )
+                                                        if calendar.get("description"):
+                                                            st.caption(
+                                                                f"Description: {calendar['description'][:100]}..."
+                                                            )
                                 else:
-                                    st.error("Failed to load calendars")
+                                    st.error("❌ Failed to load calendars")
 
-                        # Account Management
-                        if st.button("❌ Remove Account", key=f"google_remove_{i}"):
-                            disconnect_google_account(account["email"])
-                            st.rerun()
+                        # Account Management Actions
+                        st.divider()
+                        col1, col2, col3 = st.columns(3)
 
-                if st.button("➕ Add Another Google Account", key="google_add_another"):
-                    start_google_oauth()
+                        with col1:
+                            if st.button("🔄 Refresh", key=f"google_refresh_{i}"):
+                                if refresh_google_account(account["user_id"]):
+                                    st.rerun()
+
+                        with col2:
+                            if st.button("🔃 Reload Calendars", key=f"reload_cal_{i}"):
+                                with st.spinner("Reloading calendars..."):
+                                    calendars = fetch_google_calendars(
+                                        account["user_id"]
+                                    )
+                                    if calendars:
+                                        st.success("✅ Calendars reloaded")
+                                    else:
+                                        st.error("❌ Failed to reload calendars")
+
+                        with col3:
+                            if st.button("❌ Remove", key=f"google_disconnect_{i}"):
+                                disconnect_google_account(account["email"])
+                                st.rerun()
+
             else:
                 st.warning("⚠️ No Google accounts connected")
                 if st.button("🔗 Connect Google Account", key="google_connect"):

@@ -58,7 +58,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 2.5 Add account management features for both Todoist and Google (add, remove, reconfigure connections)
   - [x] 2.6 Create calendar filtering options to exclude irrelevant calendars
   - [x] 2.7 Implement settings persistence to database for all OAuth configurations (Todoist + Google)
-  - [ ] 2.8 Revert Streamlit app to thin client architecture (remove embedded OAuth logic)
+  - [x] 2.8 Revert Streamlit app to thin client architecture (remove embedded OAuth logic)
   - [ ] 2.9 Create OAuth API endpoints in FastAPI backend service
   - [ ] 2.10 Implement OAuth service layer in backend for proper separation
   - [ ] 2.11 Create OAuth management API routes (start, callback, status, disconnect)
