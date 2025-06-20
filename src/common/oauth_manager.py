@@ -363,6 +363,210 @@ class OAuthManager:
             del self._calendar_preferences[user_id]
             self._save_calendar_preferences()
 
+    def apply_calendar_filters(
+        self, calendars: list[Dict[str, Any]], filters: Dict[str, Any]
+    ) -> list[Dict[str, Any]]:
+        """Apply filtering criteria to calendar list."""
+        if not filters:
+            return calendars
+
+        filtered_calendars = calendars.copy()
+
+        # Filter by access role
+        if filters.get("access_roles"):
+            allowed_roles = filters["access_roles"]
+            filtered_calendars = [
+                cal
+                for cal in filtered_calendars
+                if cal.get("access_role", "reader") in allowed_roles
+            ]
+
+        # Filter by calendar type/category
+        if filters.get("calendar_types"):
+            allowed_types = filters["calendar_types"]
+            filtered_calendars = [
+                cal
+                for cal in filtered_calendars
+                if self._get_calendar_type(cal) in allowed_types
+            ]
+
+        # Filter by keywords in name/description
+        if filters.get("include_keywords"):
+            keywords = [kw.lower() for kw in filters["include_keywords"]]
+            filtered_calendars = [
+                cal
+                for cal in filtered_calendars
+                if any(
+                    keyword in cal.get("summary", "").lower()
+                    or keyword in cal.get("description", "").lower()
+                    for keyword in keywords
+                )
+            ]
+
+        # Exclude calendars with certain keywords
+        if filters.get("exclude_keywords"):
+            keywords = [kw.lower() for kw in filters["exclude_keywords"]]
+            filtered_calendars = [
+                cal
+                for cal in filtered_calendars
+                if not any(
+                    keyword in cal.get("summary", "").lower()
+                    or keyword in cal.get("description", "").lower()
+                    for keyword in keywords
+                )
+            ]
+
+        # Filter by primary status
+        if filters.get("primary_only"):
+            filtered_calendars = [
+                cal for cal in filtered_calendars if cal.get("primary", False)
+            ]
+
+        # Filter by ownership
+        if filters.get("owned_only"):
+            filtered_calendars = [
+                cal for cal in filtered_calendars if cal.get("access_role") == "owner"
+            ]
+
+        return filtered_calendars
+
+    def _get_calendar_type(self, calendar: Dict[str, Any]) -> str:
+        """Determine calendar type/category."""
+        summary = calendar.get("summary", "").lower()
+        description = calendar.get("description", "").lower()
+
+        # Primary calendar
+        if calendar.get("primary"):
+            return "primary"
+
+        # Work-related keywords
+        work_keywords = [
+            "work",
+            "office",
+            "meetings",
+            "team",
+            "project",
+            "company",
+            "business",
+            "client",
+            "conference",
+            "standup",
+            "sprint",
+        ]
+        if any(
+            keyword in summary or keyword in description for keyword in work_keywords
+        ):
+            return "work"
+
+        # Personal keywords
+        personal_keywords = [
+            "personal",
+            "family",
+            "home",
+            "birthday",
+            "anniversary",
+            "vacation",
+            "holiday",
+            "exercise",
+            "fitness",
+            "health",
+        ]
+        if any(
+            keyword in summary or keyword in description
+            for keyword in personal_keywords
+        ):
+            return "personal"
+
+        # Holiday/special calendars
+        if "holiday" in summary or "holiday" in description:
+            return "holiday"
+
+        # Shared calendars (not primary, multiple people have access)
+        if calendar.get("access_role") in ["reader", "freeBusyReader"]:
+            return "shared"
+
+        return "other"
+
+    def get_calendar_filter_presets(self) -> Dict[str, Dict[str, Any]]:
+        """Get predefined filter presets for common use cases."""
+        return {
+            "all": {
+                "name": "📅 All Calendars",
+                "description": "Show all available calendars",
+                "filters": {},
+            },
+            "work_only": {
+                "name": "💼 Work Only",
+                "description": "Work-related calendars only",
+                "filters": {
+                    "calendar_types": ["work", "primary"],
+                    "access_roles": ["owner", "writer"],
+                },
+            },
+            "personal_only": {
+                "name": "🏠 Personal Only",
+                "description": "Personal and family calendars only",
+                "filters": {
+                    "calendar_types": ["personal", "primary"],
+                },
+            },
+            "owned_only": {
+                "name": "👤 Owned Only",
+                "description": "Calendars you own/manage",
+                "filters": {
+                    "owned_only": True,
+                },
+            },
+            "primary_only": {
+                "name": "⭐ Primary Only",
+                "description": "Primary calendar only",
+                "filters": {
+                    "primary_only": True,
+                },
+            },
+            "exclude_holidays": {
+                "name": "🚫 No Holidays",
+                "description": "Exclude holiday calendars",
+                "filters": {
+                    "exclude_keywords": ["holiday", "holidays"],
+                },
+            },
+            "active_only": {
+                "name": "🔥 Active Only",
+                "description": "Calendars you can edit",
+                "filters": {
+                    "access_roles": ["owner", "writer"],
+                },
+            },
+        }
+
+    def get_calendar_statistics(
+        self, calendars: list[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Get statistics about calendar collection."""
+        if not calendars:
+            return {"total": 0}
+
+        stats = {
+            "total": len(calendars),
+            "enabled": sum(1 for cal in calendars if cal.get("enabled", True)),
+            "by_type": {},
+            "by_access": {},
+            "primary_count": sum(1 for cal in calendars if cal.get("primary", False)),
+        }
+
+        # Count by type
+        for calendar in calendars:
+            cal_type = self._get_calendar_type(calendar)
+            stats["by_type"][cal_type] = stats["by_type"].get(cal_type, 0) + 1
+
+        # Count by access role
+        for calendar in calendars:
+            access_role = calendar.get("access_role", "reader")
+            stats["by_access"][access_role] = stats["by_access"].get(access_role, 0) + 1
+
+        return stats
+
 
 class TodoistOAuth:
     """Handles Todoist OAuth 2.0 authentication flow."""

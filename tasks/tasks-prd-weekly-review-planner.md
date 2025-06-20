@@ -43,7 +43,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 2.3 Implement Google account authentication flow with multiple account support
   - [x] 2.4 Build calendar selection interface for each connected Google account (FR-009)
   - [x] 2.5 Add account management features for both Todoist and Google (add, remove, reconfigure connections)
-  - [ ] 2.6 Create calendar filtering options to exclude irrelevant calendars
+  - [x] 2.6 Create calendar filtering options to exclude irrelevant calendars
   - [ ] 2.7 Implement settings persistence to database for all OAuth configurations (Todoist + Google)
 
 - [ ] 3.0 Implement Todoist API Integration

@@ -702,76 +702,331 @@ async def main() -> None:
                                 if st.button(
                                     "📅 Configure Calendars", key=f"google_config_{i}"
                                 ):
-                                    # Fetch and display calendars
-                                    with st.spinner("Loading calendars..."):
-                                        calendars = fetch_google_calendars(
-                                            account["user_id"]
-                                        )
-
-                                    if calendars:
-                                        st.write(
-                                            "**Select calendars to include in weekly reviews:**"
-                                        )
-
-                                        for cal_idx, calendar in enumerate(calendars):
-                                            col_check, col_info = st.columns([1, 4])
-
-                                            with col_check:
-                                                current_enabled = calendar.get(
-                                                    "enabled", True
-                                                )
-                                                enabled = st.checkbox(
-                                                    "",
-                                                    value=current_enabled,
-                                                    key=f"cal_{account['user_id']}_{cal_idx}",
-                                                )
-
-                                                # Handle change detection manually
-                                                if (
-                                                    f"cal_prev_{account['user_id']}_{cal_idx}"
-                                                    not in st.session_state
-                                                ):
-                                                    st.session_state[
-                                                        f"cal_prev_{account['user_id']}_{cal_idx}"
-                                                    ] = current_enabled
-
-                                                prev_enabled = st.session_state[
-                                                    f"cal_prev_{account['user_id']}_{cal_idx}"
-                                                ]
-                                                if enabled != prev_enabled:
-                                                    update_calendar_selection(
-                                                        account["user_id"],
-                                                        calendar["id"],
-                                                        enabled,
-                                                    )
-                                                    st.session_state[
-                                                        f"cal_prev_{account['user_id']}_{cal_idx}"
-                                                    ] = enabled
-
-                                            with col_info:
-                                                calendar_name = calendar.get(
-                                                    "summary", "Untitled"
-                                                )
-                                                if calendar.get("primary"):
-                                                    calendar_name += " (Primary)"
-
-                                                st.write(f"**{calendar_name}**")
-                                                if calendar.get("description"):
-                                                    st.caption(calendar["description"])
-
-                                                # Show access role
-                                                access_role = calendar.get(
-                                                    "access_role", "reader"
-                                                )
-                                                st.caption(
-                                                    f"Access: {access_role.title()}"
-                                                )
-                                    else:
-                                        st.error("Failed to load calendars")
+                                    st.session_state[f"show_calendar_config_{i}"] = True
 
                             with col2:
                                 if st.button("🔄 Test", key=f"google_test_{i}"):
                                     test_google_connection(account["email"])
+
+                        # Enhanced Calendar Configuration Interface
+                        if st.session_state.get(f"show_calendar_config_{i}", False):
+                            with st.expander(
+                                "📅 Calendar Selection & Filtering", expanded=True
+                            ):
+                                col_close, _ = st.columns([1, 4])
+                                with col_close:
+                                    if st.button(
+                                        "❌ Close", key=f"close_cal_config_{i}"
+                                    ):
+                                        st.session_state[
+                                            f"show_calendar_config_{i}"
+                                        ] = False
+                                        st.rerun()
+
+                                with st.spinner("Loading calendars..."):
+                                    all_calendars = fetch_google_calendars(
+                                        account["user_id"]
+                                    )
+
+                                if all_calendars:
+                                    # Calendar statistics
+                                    stats = oauth_manager.get_calendar_statistics(
+                                        all_calendars
+                                    )
+
+                                    col1_stat, col2_stat, col3_stat = st.columns(3)
+                                    with col1_stat:
+                                        st.metric("Total Calendars", stats["total"])
+                                    with col2_stat:
+                                        st.metric("Currently Enabled", stats["enabled"])
+                                    with col3_stat:
+                                        enabled_pct = (
+                                            stats["enabled"] / stats["total"] * 100
+                                            if stats["total"] > 0
+                                            else 0
+                                        )
+                                        st.metric("Enabled %", f"{enabled_pct:.0f}%")
+
+                                    # Filter presets
+                                    st.write("**🔍 Quick Filters:**")
+                                    presets = (
+                                        oauth_manager.get_calendar_filter_presets()
+                                    )
+
+                                    # Create filter preset buttons
+                                    preset_cols = st.columns(len(presets))
+                                    selected_preset = None
+
+                                    for idx, (preset_key, preset_data) in enumerate(
+                                        presets.items()
+                                    ):
+                                        with preset_cols[idx]:
+                                            if st.button(
+                                                preset_data["name"],
+                                                key=f"preset_{account['user_id']}_{preset_key}",
+                                                help=preset_data["description"],
+                                            ):
+                                                selected_preset = preset_key
+
+                                    # Apply filter if preset selected
+                                    if selected_preset:
+                                        if selected_preset == "all":
+                                            filtered_calendars = all_calendars
+                                        else:
+                                            filter_config = presets[selected_preset][
+                                                "filters"
+                                            ]
+                                            filtered_calendars = (
+                                                oauth_manager.apply_calendar_filters(
+                                                    all_calendars, filter_config
+                                                )
+                                            )
+
+                                        # Update session state for display
+                                        st.session_state[
+                                            f"filtered_calendars_{account['user_id']}"
+                                        ] = filtered_calendars
+                                        st.success(
+                                            f"Applied filter: {presets[selected_preset]['name']}"
+                                        )
+
+                                    # Use filtered calendars if available
+                                    display_calendars = st.session_state.get(
+                                        f"filtered_calendars_{account['user_id']}",
+                                        all_calendars,
+                                    )
+
+                                    # Advanced filtering
+                                    with st.expander(
+                                        "🛠️ Advanced Filters", expanded=False
+                                    ):
+                                        st.write("**Custom Filter Options:**")
+
+                                        # Access role filter
+                                        access_roles = st.multiselect(
+                                            "Access Roles",
+                                            [
+                                                "owner",
+                                                "writer",
+                                                "reader",
+                                                "freeBusyReader",
+                                            ],
+                                            default=[
+                                                "owner",
+                                                "writer",
+                                                "reader",
+                                                "freeBusyReader",
+                                            ],
+                                            key=f"access_filter_{account['user_id']}",
+                                        )
+
+                                        # Calendar type filter
+                                        calendar_types = st.multiselect(
+                                            "Calendar Types",
+                                            [
+                                                "primary",
+                                                "work",
+                                                "personal",
+                                                "holiday",
+                                                "shared",
+                                                "other",
+                                            ],
+                                            default=[
+                                                "primary",
+                                                "work",
+                                                "personal",
+                                                "holiday",
+                                                "shared",
+                                                "other",
+                                            ],
+                                            key=f"type_filter_{account['user_id']}",
+                                        )
+
+                                        # Keyword filters
+                                        col_include, col_exclude = st.columns(2)
+                                        with col_include:
+                                            include_keywords = st.text_input(
+                                                "Include Keywords (comma-separated)",
+                                                key=f"include_filter_{account['user_id']}",
+                                                placeholder="work, meeting, team",
+                                            )
+                                        with col_exclude:
+                                            exclude_keywords = st.text_input(
+                                                "Exclude Keywords (comma-separated)",
+                                                key=f"exclude_filter_{account['user_id']}",
+                                                placeholder="holiday, spam, test",
+                                            )
+
+                                        # Apply custom filter
+                                        if st.button(
+                                            "Apply Custom Filter",
+                                            key=f"custom_filter_{account['user_id']}",
+                                        ):
+                                            custom_filters = {
+                                                "access_roles": access_roles,
+                                                "calendar_types": calendar_types,
+                                            }
+
+                                            if include_keywords:
+                                                custom_filters["include_keywords"] = [
+                                                    kw.strip()
+                                                    for kw in include_keywords.split(
+                                                        ","
+                                                    )
+                                                    if kw.strip()
+                                                ]
+
+                                            if exclude_keywords:
+                                                custom_filters["exclude_keywords"] = [
+                                                    kw.strip()
+                                                    for kw in exclude_keywords.split(
+                                                        ","
+                                                    )
+                                                    if kw.strip()
+                                                ]
+
+                                            filtered_calendars = (
+                                                oauth_manager.apply_calendar_filters(
+                                                    all_calendars, custom_filters
+                                                )
+                                            )
+                                            st.session_state[
+                                                f"filtered_calendars_{account['user_id']}"
+                                            ] = filtered_calendars
+                                            st.success(
+                                                f"Applied custom filter. "
+                                                f"Showing {len(filtered_calendars)} calendars."
+                                            )
+
+                                    # Bulk actions
+                                    st.write("**📦 Bulk Actions:**")
+                                    bulk_col1, bulk_col2, bulk_col3 = st.columns(3)
+
+                                    with bulk_col1:
+                                        if st.button(
+                                            "✅ Enable All Visible",
+                                            key=f"enable_all_{account['user_id']}",
+                                        ):
+                                            for calendar in display_calendars:
+                                                update_calendar_selection(
+                                                    account["user_id"],
+                                                    calendar["id"],
+                                                    True,
+                                                )
+                                            st.success("Enabled all visible calendars")
+                                            st.rerun()
+
+                                    with bulk_col2:
+                                        if st.button(
+                                            "❌ Disable All Visible",
+                                            key=f"disable_all_{account['user_id']}",
+                                        ):
+                                            for calendar in display_calendars:
+                                                update_calendar_selection(
+                                                    account["user_id"],
+                                                    calendar["id"],
+                                                    False,
+                                                )
+                                            st.success("Disabled all visible calendars")
+                                            st.rerun()
+
+                                    with bulk_col3:
+                                        if st.button(
+                                            "🔄 Reset Filters",
+                                            key=f"reset_filters_{account['user_id']}",
+                                        ):
+                                            if (
+                                                f"filtered_calendars_{account['user_id']}"
+                                                in st.session_state
+                                            ):
+                                                del st.session_state[
+                                                    f"filtered_calendars_{account['user_id']}"
+                                                ]
+                                            st.success(
+                                                "Filters reset - showing all calendars"
+                                            )
+                                            st.rerun()
+
+                                    # Show filter status
+                                    if len(display_calendars) < len(all_calendars):
+                                        st.info(
+                                            f"🔍 Showing {len(display_calendars)} of "
+                                            f"{len(all_calendars)} calendars (filtered)"
+                                        )
+
+                                    st.divider()
+
+                                    # Calendar list with type indicators
+                                    st.write("**📋 Calendar Selection:**")
+
+                                    for cal_idx, calendar in enumerate(
+                                        display_calendars
+                                    ):
+                                        col_check, col_info, col_type = st.columns(
+                                            [1, 3, 1]
+                                        )
+
+                                        with col_check:
+                                            current_enabled = calendar.get(
+                                                "enabled", True
+                                            )
+                                            enabled = st.checkbox(
+                                                "",
+                                                value=current_enabled,
+                                                key=f"cal_{account['user_id']}_{calendar['id']}",
+                                            )
+
+                                            # Handle change detection
+                                            prev_key = f"cal_prev_{account['user_id']}_{calendar['id']}"
+                                            if prev_key not in st.session_state:
+                                                st.session_state[prev_key] = (
+                                                    current_enabled
+                                                )
+
+                                            prev_enabled = st.session_state[prev_key]
+                                            if enabled != prev_enabled:
+                                                update_calendar_selection(
+                                                    account["user_id"],
+                                                    calendar["id"],
+                                                    enabled,
+                                                )
+                                                st.session_state[prev_key] = enabled
+
+                                        with col_info:
+                                            calendar_name = calendar.get(
+                                                "summary", "Untitled"
+                                            )
+                                            if calendar.get("primary"):
+                                                calendar_name += " ⭐"
+
+                                            st.write(f"**{calendar_name}**")
+                                            if calendar.get("description"):
+                                                st.caption(calendar["description"])
+
+                                            # Show access role
+                                            access_role = calendar.get(
+                                                "access_role", "reader"
+                                            )
+                                            st.caption(f"Access: {access_role.title()}")
+
+                                        with col_type:
+                                            cal_type = oauth_manager._get_calendar_type(
+                                                calendar
+                                            )
+                                            type_icons = {
+                                                "primary": "⭐",
+                                                "work": "💼",
+                                                "personal": "🏠",
+                                                "holiday": "🎉",
+                                                "shared": "👥",
+                                                "other": "📅",
+                                            }
+                                            st.write(
+                                                f"{type_icons.get(cal_type, '📅')} "
+                                                f"{cal_type.title()}"
+                                            )
+                                else:
+                                    st.error("Failed to load calendars")
 
                         # Account Management
                         if st.button("❌ Remove Account", key=f"google_remove_{i}"):
