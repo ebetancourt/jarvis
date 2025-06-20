@@ -6,7 +6,10 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 
 - `src/agents/weekly_review_agent.py` - Main agent implementation with GTD-structured conversational interface, comprehensive areas of responsibility, David Allen's 6-step weekly review process, memory/context handling with session management tools, and graceful sparse data handling with adaptive review approaches.
 - `src/agents/agents.py` - Agent registry with weekly review agent added as "weekly-review-agent".
-- `src/streamlit_app.py` - Enhanced Streamlit app with OAuth configuration interface for Todoist and Google Calendar integrations in sidebar popover.
+- `src/streamlit_app.py` - Thin client Streamlit app with OAuth Management UI that calls backend API endpoints.
+- `src/service/routes/oauth.py` - FastAPI OAuth management routes and endpoints.
+- `src/service/oauth_service.py` - OAuth service layer for backend business logic.
+- `src/schema/oauth_models.py` - Pydantic models for OAuth API requests and responses.
 - `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
 - `src/tools/todoist_tools.py` - Todoist API integration tools for fetching and updating tasks/projects.
 - `tests/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
@@ -28,6 +31,16 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - OAuth tokens and API credentials should be stored securely and never committed to version control.
 - The agent should integrate with existing journaling agent tools from `src/tools/journal_tools.py`.
 
+### Architecture Fix Required
+
+**Current Issue:** Tasks 2.1-2.7 incorrectly embedded OAuth logic directly in the Streamlit app, violating the client-server architecture. The Streamlit app should be a thin frontend client that communicates with the FastAPI backend via HTTP/API calls.
+
+**Solution:** Tasks 2.8-2.13 will restore proper architecture by:
+- Moving OAuth logic to FastAPI backend service
+- Creating proper API endpoints for OAuth operations
+- Converting Streamlit to pure HTTP client
+- Maintaining clean separation between frontend UI and backend business logic
+
 ## Tasks
 
 - [x] 1.0 Create Weekly Review Agent Infrastructure
@@ -45,6 +58,89 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 2.5 Add account management features for both Todoist and Google (add, remove, reconfigure connections)
   - [x] 2.6 Create calendar filtering options to exclude irrelevant calendars
   - [x] 2.7 Implement settings persistence to database for all OAuth configurations (Todoist + Google)
+  - [ ] 2.8 Revert Streamlit app to thin client architecture (remove embedded OAuth logic)
+  - [ ] 2.9 Create OAuth API endpoints in FastAPI backend service
+  - [ ] 2.10 Implement OAuth service layer in backend for proper separation
+  - [ ] 2.11 Create OAuth management API routes (start, callback, status, disconnect)
+  - [ ] 2.12 Update Streamlit OAuth Management button to use API endpoints
+  - [ ] 2.13 Test and validate client-server OAuth flow end-to-end
+
+## Task 2.8: Revert Streamlit App to Thin Client Architecture
+
+**Objective:** Remove all embedded OAuth logic from Streamlit app and restore proper client-server separation
+
+**Key Actions:**
+- Remove `common.oauth_manager` imports and dependencies from `src/streamlit_app.py`
+- Remove embedded OAuth functions: `start_todoist_oauth()`, `disconnect_todoist()`, `start_google_oauth()`, etc.
+- Remove OAuth callback handling logic from Streamlit app
+- Remove calendar management functions from Streamlit app
+- Clean up Docker dependencies in client group (remove Google API libs, etc.)
+- Restore Streamlit app to pure UI/HTTP client functionality
+
+## Task 2.9: Create OAuth API Endpoints in FastAPI Backend Service
+
+**Objective:** Design and implement comprehensive OAuth API endpoints in the backend service
+
+**API Endpoints to Create:**
+- `POST /api/oauth/todoist/start` - Initiate Todoist OAuth flow
+- `POST /api/oauth/google/start` - Initiate Google OAuth flow
+- `GET /api/oauth/callback/{service}` - Handle OAuth callbacks for both services
+- `GET /api/oauth/status/{user_id}` - Get OAuth status for all services
+- `DELETE /api/oauth/disconnect/{service}/{user_id}` - Disconnect specific service
+- `POST /api/oauth/refresh/{service}/{user_id}` - Refresh specific token
+- `GET /api/calendars/{user_id}` - Get calendar list for Google accounts
+- `PUT /api/calendars/{user_id}/preferences` - Update calendar preferences
+
+## Task 2.10: Implement OAuth Service Layer in Backend
+
+**Objective:** Create proper service layer abstraction for OAuth operations in backend
+
+**Components to Create:**
+- `src/service/oauth_service.py` - OAuth business logic layer
+- Move `src/common/oauth_manager.py` functionality to backend service
+- Create OAuth service factory and dependency injection
+- Implement proper error handling and validation
+- Add OAuth operation logging and monitoring
+- Create service-level OAuth health checks
+
+## Task 2.11: Create OAuth Management API Routes
+
+**Objective:** Implement complete OAuth management API with proper request/response models
+
+**Implementation Details:**
+- Create Pydantic models for OAuth requests/responses in `src/schema/oauth_models.py`
+- Implement OAuth route handlers in `src/service/routes/oauth.py`
+- Add proper authentication and authorization for OAuth endpoints
+- Implement CORS handling for OAuth callback redirects
+- Add comprehensive error handling with proper HTTP status codes
+- Create OpenAPI documentation for OAuth endpoints
+
+## Task 2.12: Update Streamlit OAuth Management Button
+
+**Objective:** Redesign OAuth Management UI to use API endpoints instead of embedded logic
+
+**Key Changes:**
+- Replace embedded OAuth functions with HTTP client calls to backend API
+- Update OAuth status loading to call `/api/oauth/status/{user_id}`
+- Replace OAuth connection flows with API redirects to `/api/oauth/{service}/start`
+- Update account management to use API disconnect/refresh endpoints
+- Replace calendar management with API calls to `/api/calendars/*`
+- Add proper error handling for API call failures
+- Maintain existing UI/UX while using API backend
+
+## Task 2.13: Test and Validate Client-Server OAuth Flow
+
+**Objective:** Comprehensive testing of the new client-server OAuth architecture
+
+**Testing Areas:**
+- End-to-end OAuth flow testing (Todoist + Google)
+- API endpoint integration testing
+- Error handling and edge case validation
+- Cross-browser OAuth callback testing
+- Multi-user OAuth isolation testing
+- Calendar preference synchronization testing
+- OAuth token refresh and expiration handling
+- Database persistence validation across client-server boundary
 
 - [ ] 3.0 Implement Todoist API Integration
   - [ ] 3.1 Create `src/tools/todoist_tools.py` with functions to fetch tasks, projects, and labels (FR-006)
