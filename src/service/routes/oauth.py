@@ -7,7 +7,7 @@ logic removed from the Streamlit frontend in Task 2.8.
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
 
 from service.oauth_service import (
@@ -17,89 +17,25 @@ from service.oauth_service import (
     OAuthConfigurationError,
     OAuthTokenError,
 )
+from schema.oauth_models import (
+    OAuthStartResponse,
+    OAuthCallbackResponse,
+    OAuthStatus,
+    OAuthStatusResponse,
+    OAuthDisconnectResponse,
+    OAuthRefreshResponse,
+    OAuthHealthResponse,
+    ServiceSummaryResponse,
+    CalendarsResponse,
+    CalendarPreferencesRequest,
+    CalendarPreferencesResponse,
+    CalendarSummaryResponse,
+    ErrorResponse,
+    OAuthServiceHealth,
+)
 
 
-# Response Models
-class OAuthStartResponse(BaseModel):
-    """Response for OAuth start endpoints."""
-
-    authorization_url: str
-    state: str
-    message: str
-
-
-class OAuthStatus(BaseModel):
-    """OAuth status for a single service."""
-
-    connected: bool
-    user_email: Optional[str] = None
-    user_name: Optional[str] = None
-    expires_in: Optional[int] = None
-    status: str  # "healthy", "expired", "expiring_soon", etc.
-    can_refresh: bool = False
-
-
-class OAuthStatusResponse(BaseModel):
-    """Response for OAuth status endpoint."""
-
-    todoist: OAuthStatus
-    google_accounts: List[Dict[str, Any]]
-
-
-class OAuthDisconnectResponse(BaseModel):
-    """Response for OAuth disconnect endpoint."""
-
-    success: bool
-    message: str
-
-
-class OAuthRefreshResponse(BaseModel):
-    """Response for OAuth refresh endpoint."""
-
-    success: bool
-    message: str
-    expires_in: Optional[int] = None
-
-
-class Calendar(BaseModel):
-    """Google Calendar information."""
-
-    id: str
-    summary: str
-    description: Optional[str] = None
-    primary: bool = False
-    accessRole: str
-    enabled: bool = True
-
-
-class CalendarsResponse(BaseModel):
-    """Response for calendars endpoint."""
-
-    calendars: List[Calendar]
-    total_count: int
-    enabled_count: int
-
-
-class CalendarPreferencesRequest(BaseModel):
-    """Request for updating calendar preferences."""
-
-    calendar_preferences: List[Dict[str, Any]]
-
-
-class CalendarPreferencesResponse(BaseModel):
-    """Response for calendar preferences update."""
-
-    success: bool
-    message: str
-    updated_count: int
-
-
-# Error response model
-class ErrorResponse(BaseModel):
-    """Standard error response."""
-
-    detail: str
-    error_code: Optional[str] = None
+# Models are now imported from schema.oauth_models
 
 
 # Create router
@@ -150,17 +86,29 @@ async def start_google_oauth(user_id: str) -> OAuthStartResponse:
     Raises:
         HTTPException: If OAuth configuration is missing or invalid
     """
-    # TODO: Implement in Task 2.10 with OAuth service layer
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
-    )
+    oauth_service = get_oauth_service()
+    try:
+        result = oauth_service.start_google_oauth(user_id)
+        return OAuthStartResponse(
+            authorization_url=result["authorization_url"],
+            state=result["state"],
+            message=result["message"],
+        )
+    except OAuthConfigurationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except OAuthServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
-@router.get("/callback/{service}")
+@router.get("/callback/{service}", response_model=OAuthCallbackResponse)
 async def oauth_callback(
-    service: str, code: str, state: str, user_id: Optional[str] = None
-) -> Dict[str, Any]:
+    service: str,
+    code: str = Query(..., description="Authorization code from OAuth provider"),
+    state: str = Query(..., description="State parameter for security verification"),
+    user_id: Optional[str] = Query(None, description="Optional user identifier"),
+) -> OAuthCallbackResponse:
     """
     Handle OAuth callbacks for both Todoist and Google services.
 
@@ -182,11 +130,24 @@ async def oauth_callback(
             detail=f"Unsupported service: {service}",
         )
 
-    # TODO: Implement in Task 2.10 with OAuth service layer
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
-    )
+    oauth_service = get_oauth_service()
+    try:
+        result = oauth_service.handle_oauth_callback(service, code, state, user_id)
+        return OAuthCallbackResponse(
+            success=result["success"],
+            service=result["service"],
+            user_email=result.get("user_email"),
+            user_id=result.get("user_id"),
+            message=result["message"],
+        )
+    except OAuthConfigurationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except OAuthTokenError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except OAuthServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
 @router.get("/status/{user_id}", response_model=OAuthStatusResponse)
@@ -203,11 +164,27 @@ async def get_oauth_status(user_id: str) -> OAuthStatusResponse:
     Raises:
         HTTPException: If user not found or database error
     """
-    # TODO: Implement in Task 2.10 with OAuth service layer
-    # For now, return placeholder disconnected status
-    return OAuthStatusResponse(
-        todoist=OAuthStatus(connected=False, status="disconnected"), google_accounts=[]
-    )
+    oauth_service = get_oauth_service()
+    try:
+        status_data = oauth_service.get_oauth_status(user_id)
+        return OAuthStatusResponse(
+            todoist=OAuthStatus(**status_data["todoist"]),
+            google_accounts=[
+                {
+                    "user_id": acc["user_id"],
+                    "email": acc["email"],
+                    "name": acc["name"],
+                    "is_valid": acc["is_valid"],
+                    "calendars_enabled": acc["calendars_enabled"],
+                    "calendars_total": acc["calendars_total"],
+                }
+                for acc in status_data["google_accounts"]
+            ],
+        )
+    except OAuthServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
 @router.delete(
