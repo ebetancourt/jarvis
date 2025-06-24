@@ -1008,7 +1008,7 @@ def get_todoist_config() -> Optional[TodoistConfig]:
     client_id = os.getenv("TODOIST_CLIENT_ID")
     client_secret = os.getenv("TODOIST_CLIENT_SECRET")
     redirect_uri = os.getenv(
-        "TODOIST_REDIRECT_URI", "http://localhost:8501/oauth/todoist/callback"
+        "TODOIST_REDIRECT_URI", "http://localhost:8080/api/oauth/callback/todoist"
     )
 
     if not client_id or not client_secret:
@@ -1024,7 +1024,8 @@ def get_google_config() -> Optional[GoogleConfig]:
     client_id = os.getenv("GOOGLE_CALENDAR_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET")
     redirect_uri = os.getenv(
-        "GOOGLE_CALENDAR_REDIRECT_URI", "http://localhost:8501/oauth/google/callback"
+        "GOOGLE_CALENDAR_REDIRECT_URI",
+        "http://localhost:8080/api/oauth/callback/google",
     )
 
     if not client_id or not client_secret:

@@ -68,6 +68,8 @@ services:
       - "8501:8501"
     depends_on:
       - agent_service
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
       interval: 5s

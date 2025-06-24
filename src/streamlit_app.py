@@ -5,6 +5,7 @@ import uuid
 from collections.abc import AsyncGenerator
 # OAuth types removed - will use API responses directly
 
+import httpx
 import streamlit as st
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -80,18 +81,19 @@ def get_or_create_user_id() -> str:
 # OAuth HTTP Client Functions for Backend API
 def get_backend_url() -> str:
     """Get the backend service URL."""
-    host = os.getenv("HOST", "0.0.0.0")
-    port = os.getenv("PORT", 8080)
-    return f"http://{host}:{port}"
+    agent_url = os.getenv("AGENT_URL")
+    if not agent_url:
+        host = os.getenv("HOST", "0.0.0.0")
+        port = os.getenv("PORT", 8080)
+        agent_url = f"http://{host}:{port}"
+    return agent_url
 
 
 def call_oauth_status_api(user_id: str) -> dict:
     """Call backend API to get OAuth status for a user."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.get(
-            f"{backend_url}/api/oauth/status/{user_id}"
-        )
+        response = httpx.get(f"{backend_url}/api/oauth/status/{user_id}")
         if response.status_code == 200:
             return response.json()
         else:
@@ -112,7 +114,7 @@ def call_oauth_start_api(service: str, user_id: str) -> dict:
     """Call backend API to start OAuth flow."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.post(
+        response = httpx.post(
             f"{backend_url}/api/oauth/{service}/start", params={"user_id": user_id}
         )
         if response.status_code == 200:
@@ -129,7 +131,7 @@ def call_oauth_disconnect_api(service: str, user_id: str) -> bool:
     """Call backend API to disconnect OAuth service."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.delete(
+        response = httpx.delete(
             f"{backend_url}/api/oauth/disconnect/{service}/{user_id}"
         )
         if response.status_code == 200:
@@ -147,9 +149,7 @@ def call_oauth_refresh_api(service: str, user_id: str) -> bool:
     """Call backend API to refresh OAuth token."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.post(
-            f"{backend_url}/api/oauth/refresh/{service}/{user_id}"
-        )
+        response = httpx.post(f"{backend_url}/api/oauth/refresh/{service}/{user_id}")
         if response.status_code == 200:
             result = response.json()
             return result.get("success", False)
@@ -165,9 +165,7 @@ def call_oauth_health_api(service: str, user_id: str) -> dict:
     """Call backend API to get OAuth health status."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.get(
-            f"{backend_url}/api/oauth/health/{service}/{user_id}"
-        )
+        response = httpx.get(f"{backend_url}/api/oauth/health/{service}/{user_id}")
         if response.status_code == 200:
             return response.json()
         else:
@@ -190,9 +188,7 @@ def call_oauth_summary_api(service: str) -> dict:
     """Call backend API to get service summary."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.get(
-            f"{backend_url}/api/oauth/summary/{service}"
-        )
+        response = httpx.get(f"{backend_url}/api/oauth/summary/{service}")
         if response.status_code == 200:
             return response.json()
         else:
@@ -216,9 +212,7 @@ def call_calendars_api(user_id: str) -> list:
     """Call backend API to get calendars for a user."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.get(
-            f"{backend_url}/api/calendars/{user_id}"
-        )
+        response = httpx.get(f"{backend_url}/api/calendars/{user_id}")
         if response.status_code == 200:
             result = response.json()
             return result.get("calendars", [])
@@ -234,9 +228,7 @@ def call_calendar_summary_api(user_id: str) -> dict:
     """Call backend API to get calendar summary."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.get(
-            f"{backend_url}/api/calendars/{user_id}/summary"
-        )
+        response = httpx.get(f"{backend_url}/api/calendars/{user_id}/summary")
         if response.status_code == 200:
             return response.json()
         else:
@@ -249,7 +241,7 @@ def call_update_calendar_preferences_api(user_id: str, preferences: list) -> boo
     """Call backend API to update calendar preferences."""
     try:
         backend_url = get_backend_url()
-        response = st.session_state.agent_client._client.put(
+        response = httpx.put(
             f"{backend_url}/api/calendars/{user_id}/preferences",
             json={"calendar_preferences": preferences},
         )
@@ -414,6 +406,31 @@ def show_service_summary_from_api(service: str) -> None:
         st.warning(f"⚠️ {expired} account(s) need attention")
 
 
+async def handle_oauth_messages() -> None:
+    """Handle OAuth success/error messages from URL parameters."""
+    # Check for OAuth success message
+    oauth_success = st.query_params.get("oauth_success")
+    oauth_message = st.query_params.get("message")
+    oauth_error = st.query_params.get("oauth_error")
+
+    if oauth_success:
+        service_name = oauth_success.title()
+        message = oauth_message or f"Successfully connected {service_name}"
+        st.success(f"✅ {message}")
+        # Clean up URL parameters and refresh OAuth status
+        st.query_params.clear()
+        # Refresh OAuth status
+        user_id = get_or_create_user_id()
+        load_oauth_status_from_api(user_id)
+        st.rerun()
+
+    elif oauth_error:
+        st.error(f"❌ OAuth Error: {oauth_error}")
+        # Clean up URL parameters
+        st.query_params.clear()
+        st.rerun()
+
+
 async def main() -> None:
     st.set_page_config(
         page_title=APP_TITLE,
@@ -461,7 +478,8 @@ async def main() -> None:
     # Load OAuth status from backend API (requires agent_client to be initialized)
     load_oauth_status_from_api(user_id)
 
-    # TODO: OAuth callback handling will be done via backend API
+    # Handle OAuth success/error messages from URL parameters
+    await handle_oauth_messages()
 
     if "thread_id" not in st.session_state:
         thread_id = st.query_params.get("thread_id")
@@ -506,9 +524,8 @@ async def main() -> None:
             st.text_input("User ID (read-only)", value=user_id, disabled=True)
 
         # OAuth Configuration Section for Weekly Review Agent
-        with st.popover(
-            ":material/sync: OAuth Configuration", use_container_width=True
-        ):
+        @st.dialog("🔗 OAuth Configuration")
+        def oauth_config_dialog() -> None:
             st.subheader("🔗 External Integrations")
             st.caption("Configure OAuth connections for enhanced weekly reviews")
 
@@ -778,6 +795,9 @@ async def main() -> None:
                         if results:
                             for result in results:
                                 st.write(result)
+
+        if st.button(":material/sync: OAuth Configuration", use_container_width=True):
+            oauth_config_dialog()
 
         @st.dialog("Architecture")
         def architecture_dialog() -> None:

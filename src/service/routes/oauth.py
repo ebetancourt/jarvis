@@ -5,33 +5,26 @@ This module implements the OAuth API endpoints that replace the embedded OAuth
 logic removed from the Streamlit frontend in Task 2.8.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, status, Query
+from fastapi.responses import RedirectResponse
 
 from service.oauth_service import (
     get_oauth_service,
-    OAuthService,
     OAuthServiceError,
     OAuthConfigurationError,
     OAuthTokenError,
 )
 from schema.oauth_models import (
     OAuthStartResponse,
-    OAuthCallbackResponse,
     OAuthStatus,
     OAuthStatusResponse,
     OAuthDisconnectResponse,
     OAuthRefreshResponse,
-    OAuthHealthResponse,
-    ServiceSummaryResponse,
     CalendarsResponse,
     CalendarPreferencesRequest,
     CalendarPreferencesResponse,
-    CalendarSummaryResponse,
-    ErrorResponse,
-    OAuthServiceHealth,
 )
 
 
@@ -102,15 +95,16 @@ async def start_google_oauth(user_id: str) -> OAuthStartResponse:
         )
 
 
-@router.get("/callback/{service}", response_model=OAuthCallbackResponse)
+@router.get("/callback/{service}")
 async def oauth_callback(
     service: str,
     code: str = Query(..., description="Authorization code from OAuth provider"),
     state: str = Query(..., description="State parameter for security verification"),
     user_id: Optional[str] = Query(None, description="Optional user identifier"),
-) -> OAuthCallbackResponse:
+):
     """
     Handle OAuth callbacks for both Todoist and Google services.
+    Redirects back to Streamlit with success or error message.
 
     Args:
         service: Service name ("todoist" or "google")
@@ -119,34 +113,47 @@ async def oauth_callback(
         user_id: Optional user identifier
 
     Returns:
-        Success response with token information
+        Redirect response to Streamlit with success/error message
 
     Raises:
         HTTPException: If service is unsupported or OAuth exchange fails
     """
     if service not in ["todoist", "google"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported service: {service}",
+        # Redirect back to Streamlit with error
+        return RedirectResponse(
+            url=f"http://localhost:8501?oauth_error=Unsupported service: {service}",
+            status_code=302,
         )
 
     oauth_service = get_oauth_service()
     try:
         result = oauth_service.handle_oauth_callback(service, code, state, user_id)
-        return OAuthCallbackResponse(
-            success=result["success"],
-            service=result["service"],
-            user_email=result.get("user_email"),
-            user_id=result.get("user_id"),
-            message=result["message"],
+
+        if result.get("success"):
+            # Redirect back to Streamlit with success message
+            service_name = service.title()
+            message = result.get("message", f"Successfully connected {service_name}")
+            return RedirectResponse(
+                url=f"http://localhost:8501?oauth_success={service}&message={message}",
+                status_code=302,
+            )
+        else:
+            # Redirect back to Streamlit with error
+            error_msg = result.get("message", "OAuth connection failed")
+            return RedirectResponse(
+                url=f"http://localhost:8501?oauth_error={error_msg}", status_code=302
+            )
+
+    except (OAuthConfigurationError, OAuthTokenError) as e:
+        # Redirect back to Streamlit with error
+        return RedirectResponse(
+            url=f"http://localhost:8501?oauth_error={str(e)}", status_code=302
         )
-    except OAuthConfigurationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except OAuthTokenError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except OAuthServiceError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        # Redirect back to Streamlit with error
+        return RedirectResponse(
+            url=f"http://localhost:8501?oauth_error=Service error: {str(e)}",
+            status_code=302,
         )
 
 
@@ -215,7 +222,8 @@ async def disconnect_oauth_service(
     # TODO: Implement in Task 2.10 with OAuth service layer
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
+        detail="OAuth service layer not yet implemented. "
+        "Will be completed in Task 2.10.",
     )
 
 
@@ -243,7 +251,8 @@ async def refresh_oauth_token(service: str, user_id: str) -> OAuthRefreshRespons
     # TODO: Implement in Task 2.10 with OAuth service layer
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
+        detail="OAuth service layer not yet implemented. "
+        "Will be completed in Task 2.10.",
     )
 
 
@@ -268,7 +277,8 @@ async def get_user_calendars(user_id: str) -> CalendarsResponse:
     # TODO: Implement in Task 2.10 with OAuth service layer
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
+        detail="OAuth service layer not yet implemented. "
+        "Will be completed in Task 2.10.",
     )
 
 
@@ -294,7 +304,8 @@ async def update_calendar_preferences(
     # TODO: Implement in Task 2.10 with OAuth service layer
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. Will be completed in Task 2.10.",
+        detail="OAuth service layer not yet implemented. "
+        "Will be completed in Task 2.10.",
     )
 
 

@@ -152,8 +152,9 @@ class OAuthService:
             todoist_oauth = TodoistOAuth(self._todoist_config, self)
             auth_url, state = todoist_oauth.get_authorization_url()
 
-            # Store state for verification (in a real implementation, you'd want to store this in a cache/database)
+            # Store state and user_id for verification during callback
             oauth_db.set_oauth_metadata(f"todoist_state_{user_id}", state)
+            oauth_db.set_oauth_metadata(f"todoist_user_{state}", user_id)
 
             logger.info(f"Started Todoist OAuth flow for user {user_id}")
             return {
@@ -190,8 +191,9 @@ class OAuthService:
             google_oauth = GoogleOAuth(self._google_config, self)
             auth_url, state = google_oauth.get_authorization_url()
 
-            # Store state for verification
+            # Store state and user_id for verification during callback
             oauth_db.set_oauth_metadata(f"google_state_{user_id}", state)
+            oauth_db.set_oauth_metadata(f"google_user_{state}", user_id)
 
             logger.info(f"Started Google OAuth flow for user {user_id}")
             return {
@@ -241,11 +243,18 @@ class OAuthService:
         if not self._todoist_config:
             raise OAuthConfigurationError("Todoist configuration not available")
 
-        # Verify state if user_id provided
-        if user_id:
-            stored_state = oauth_db.get_oauth_metadata(f"todoist_state_{user_id}")
-            if stored_state != state:
-                raise OAuthServiceError("Invalid state parameter")
+        # If user_id not provided, try to retrieve it from stored state
+        if not user_id:
+            user_id = oauth_db.get_oauth_metadata(f"todoist_user_{state}")
+            if not user_id:
+                raise OAuthServiceError(
+                    "Could not determine user_id for OAuth callback"
+                )
+
+        # Verify state
+        stored_state = oauth_db.get_oauth_metadata(f"todoist_state_{user_id}")
+        if stored_state != state:
+            raise OAuthServiceError("Invalid state parameter")
 
         todoist_oauth = TodoistOAuth(self._todoist_config, self)
         token = todoist_oauth.exchange_code_for_token(code, state)
@@ -253,11 +262,12 @@ class OAuthService:
         if not token:
             raise OAuthTokenError("Failed to exchange code for token")
 
-        # Store token
-        if user_id:
-            self.store_token("todoist", user_id, token)
-            # Clean up state
-            oauth_db.remove_oauth_metadata(f"todoist_state_{user_id}")
+        # Store token (user_id is guaranteed to exist now)
+        self.store_token("todoist", user_id, token)
+
+        # Clean up state metadata
+        oauth_db.remove_oauth_metadata(f"todoist_state_{user_id}")
+        oauth_db.remove_oauth_metadata(f"todoist_user_{state}")
 
         logger.info(f"Successfully handled Todoist OAuth callback for user {user_id}")
         return {
@@ -274,11 +284,18 @@ class OAuthService:
         if not self._google_config:
             raise OAuthConfigurationError("Google configuration not available")
 
-        # Verify state if user_id provided
-        if user_id:
-            stored_state = oauth_db.get_oauth_metadata(f"google_state_{user_id}")
-            if stored_state != state:
-                raise OAuthServiceError("Invalid state parameter")
+        # If user_id not provided, try to retrieve it from stored state
+        if not user_id:
+            user_id = oauth_db.get_oauth_metadata(f"google_user_{state}")
+            if not user_id:
+                raise OAuthServiceError(
+                    "Could not determine user_id for OAuth callback"
+                )
+
+        # Verify state
+        stored_state = oauth_db.get_oauth_metadata(f"google_state_{user_id}")
+        if stored_state != state:
+            raise OAuthServiceError("Invalid state parameter")
 
         google_oauth = GoogleOAuth(self._google_config, self)
         token = google_oauth.exchange_code_for_token(code, state)
@@ -290,16 +307,14 @@ class OAuthService:
         google_email = (
             token.user_info.get("email", "unknown") if token.user_info else "unknown"
         )
-        google_user_id = (
-            f"{user_id}_google_{google_email}" if user_id else f"google_{google_email}"
-        )
+        google_user_id = f"{user_id}_google_{google_email}"
 
         # Store token
         self.store_token("google", google_user_id, token)
 
-        # Clean up state
-        if user_id:
-            oauth_db.remove_oauth_metadata(f"google_state_{user_id}")
+        # Clean up state metadata
+        oauth_db.remove_oauth_metadata(f"google_state_{user_id}")
+        oauth_db.remove_oauth_metadata(f"google_user_{state}")
 
         logger.info(f"Successfully handled Google OAuth callback for user {user_id}")
         return {
