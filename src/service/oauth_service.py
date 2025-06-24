@@ -51,6 +51,7 @@ class GoogleConfig:
     client_secret: str
     redirect_uri: str
     scope: str = (
+        "openid email profile "
         "https://www.googleapis.com/auth/calendar.readonly "
         "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
     )

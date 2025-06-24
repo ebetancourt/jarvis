@@ -101,6 +101,40 @@ class OAuthDatabase:
             """
             )
 
+            # User accounts table for login mapping
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    app_user_id TEXT UNIQUE NOT NULL,
+                    google_user_id TEXT UNIQUE NOT NULL,
+                    email TEXT NOT NULL,
+                    name TEXT,
+                    picture_url TEXT,
+                    is_primary_login BOOLEAN DEFAULT TRUE,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """
+            )
+
+            # Login sessions table for authentication
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS login_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_token TEXT UNIQUE NOT NULL,
+                    app_user_id TEXT NOT NULL,
+                    google_user_id TEXT NOT NULL,
+                    expires_at REAL NOT NULL,
+                    created_at REAL NOT NULL,
+                    last_accessed_at REAL NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    FOREIGN KEY (app_user_id) REFERENCES user_accounts (app_user_id)
+                )
+            """
+            )
+
             # Create indexes for better performance
             conn.execute(
                 """
@@ -120,6 +154,34 @@ class OAuthDatabase:
                 """
                 CREATE INDEX IF NOT EXISTS idx_oauth_metadata_key
                 ON oauth_metadata(key)
+            """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_accounts_app_user_id
+                ON user_accounts(app_user_id)
+            """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_accounts_google_user_id
+                ON user_accounts(google_user_id)
+            """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_login_sessions_token
+                ON login_sessions(session_token)
+            """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_login_sessions_user
+                ON login_sessions(app_user_id, is_active)
             """
             )
 
@@ -512,6 +574,241 @@ class OAuthDatabase:
         except sqlite3.Error as e:
             print(f"Error getting database stats: {e}")
             return {}
+
+    # User Account Management Methods
+
+    def create_user_account(
+        self,
+        app_user_id: str,
+        google_user_id: str,
+        email: str,
+        name: Optional[str] = None,
+        picture_url: Optional[str] = None,
+        is_primary_login: bool = True,
+    ) -> bool:
+        """Create a new user account mapping."""
+        try:
+            with self._get_connection() as conn:
+                current_time = time.time()
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO user_accounts
+                    (app_user_id, google_user_id, email, name, picture_url, is_primary_login, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (
+                        app_user_id,
+                        google_user_id,
+                        email,
+                        name,
+                        picture_url,
+                        is_primary_login,
+                        current_time,
+                        current_time,
+                    ),
+                )
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            print(f"Error creating user account: {e}")
+            return False
+
+    def get_user_account_by_app_id(self, app_user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user account by app user ID."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT app_user_id, google_user_id, email, name, picture_url, 
+                           is_primary_login, created_at, updated_at
+                    FROM user_accounts 
+                    WHERE app_user_id = ?
+                """,
+                    (app_user_id,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as e:
+            print(f"Error getting user account: {e}")
+            return None
+
+    def get_user_account_by_google_id(self, google_user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user account by Google user ID."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT app_user_id, google_user_id, email, name, picture_url, 
+                           is_primary_login, created_at, updated_at
+                    FROM user_accounts 
+                    WHERE google_user_id = ?
+                """,
+                    (google_user_id,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as e:
+            print(f"Error getting user account: {e}")
+            return None
+
+    def get_primary_login_account(self) -> Optional[Dict[str, Any]]:
+        """Get the primary login account."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT app_user_id, google_user_id, email, name, picture_url, 
+                           is_primary_login, created_at, updated_at
+                    FROM user_accounts 
+                    WHERE is_primary_login = TRUE
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                """,
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as e:
+            print(f"Error getting primary login account: {e}")
+            return None
+
+    # Login Session Management Methods
+
+    def create_login_session(
+        self,
+        session_token: str,
+        app_user_id: str,
+        google_user_id: str,
+        expires_at: float,
+    ) -> bool:
+        """Create a new login session."""
+        try:
+            with self._get_connection() as conn:
+                current_time = time.time()
+                conn.execute(
+                    """
+                    INSERT INTO login_sessions
+                    (session_token, app_user_id, google_user_id, expires_at, created_at, last_accessed_at, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, TRUE)
+                """,
+                    (session_token, app_user_id, google_user_id, expires_at, current_time, current_time),
+                )
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            print(f"Error creating login session: {e}")
+            return False
+
+    def get_login_session(self, session_token: str) -> Optional[Dict[str, Any]]:
+        """Get login session by token."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT session_token, app_user_id, google_user_id, expires_at, 
+                           created_at, last_accessed_at, is_active
+                    FROM login_sessions 
+                    WHERE session_token = ? AND is_active = TRUE
+                """,
+                    (session_token,),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as e:
+            print(f"Error getting login session: {e}")
+            return None
+
+    def update_session_access_time(self, session_token: str) -> bool:
+        """Update last accessed time for a session."""
+        try:
+            with self._get_connection() as conn:
+                current_time = time.time()
+                conn.execute(
+                    """
+                    UPDATE login_sessions 
+                    SET last_accessed_at = ? 
+                    WHERE session_token = ? AND is_active = TRUE
+                """,
+                    (current_time, session_token),
+                )
+                conn.commit()
+                return conn.total_changes > 0
+        except sqlite3.Error as e:
+            print(f"Error updating session access time: {e}")
+            return False
+
+    def invalidate_session(self, session_token: str) -> bool:
+        """Invalidate a login session."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE login_sessions 
+                    SET is_active = FALSE 
+                    WHERE session_token = ?
+                """,
+                    (session_token,),
+                )
+                conn.commit()
+                return conn.total_changes > 0
+        except sqlite3.Error as e:
+            print(f"Error invalidating session: {e}")
+            return False
+
+    def invalidate_user_sessions(self, app_user_id: str) -> bool:
+        """Invalidate all sessions for a user."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE login_sessions 
+                    SET is_active = FALSE 
+                    WHERE app_user_id = ?
+                """,
+                    (app_user_id,),
+                )
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            print(f"Error invalidating user sessions: {e}")
+            return False
+
+    def cleanup_expired_sessions(self) -> int:
+        """Remove expired sessions and return count of removed sessions."""
+        try:
+            with self._get_connection() as conn:
+                current_time = time.time()
+                cursor = conn.execute(
+                    """
+                    DELETE FROM login_sessions 
+                    WHERE expires_at < ? OR is_active = FALSE
+                """,
+                    (current_time,),
+                )
+                conn.commit()
+                return cursor.rowcount
+        except sqlite3.Error as e:
+            print(f"Error cleaning up expired sessions: {e}")
+            return 0
+
+    def get_active_sessions_for_user(self, app_user_id: str) -> List[Dict[str, Any]]:
+        """Get all active sessions for a user."""
+        try:
+            with self._get_connection() as conn:
+                current_time = time.time()
+                cursor = conn.execute(
+                    """
+                    SELECT session_token, app_user_id, google_user_id, expires_at, 
+                           created_at, last_accessed_at, is_active
+                    FROM login_sessions 
+                    WHERE app_user_id = ? AND is_active = TRUE AND expires_at > ?
+                    ORDER BY last_accessed_at DESC
+                """,
+                    (app_user_id, current_time),
+                )
+                return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"Error getting active sessions: {e}")
+            return []
 
 
 # Global database instance

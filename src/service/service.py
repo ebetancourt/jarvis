@@ -28,6 +28,7 @@ from core import settings
 from memory import initialize_database, initialize_store
 from plugins.obsidian.route import router as obsidian_router
 from service.routes.oauth import router as oauth_router, calendar_router
+from service.routes.auth import router as auth_router
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -403,3 +404,4 @@ app.include_router(
 )
 app.include_router(oauth_router)
 app.include_router(calendar_router)
+app.include_router(auth_router)

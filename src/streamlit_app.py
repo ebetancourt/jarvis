@@ -27,31 +27,7 @@ from schema.task_data import TaskData, TaskDataStatus
 
 APP_TITLE = "Agent Service Toolkit"
 APP_ICON = "🧰"
-USER_ID_COOKIE = "user_id"
-
-
-def get_or_create_user_id() -> str:
-    """Get the user ID from session state or URL parameters, or create a new one if it doesn't exist."""
-    # Check if user_id exists in session state
-    if USER_ID_COOKIE in st.session_state:
-        return st.session_state[USER_ID_COOKIE]
-
-    # Try to get from URL parameters using the new st.query_params
-    if USER_ID_COOKIE in st.query_params:
-        user_id = st.query_params[USER_ID_COOKIE]
-        st.session_state[USER_ID_COOKIE] = user_id
-        return user_id
-
-    # Generate a new user_id if not found
-    user_id = str(uuid.uuid4())
-
-    # Store in session state for this session
-    st.session_state[USER_ID_COOKIE] = user_id
-
-    # Also add to URL parameters so it can be bookmarked/shared
-    st.query_params[USER_ID_COOKIE] = user_id
-
-    return user_id
+# Removed old user_id logic - now using authenticated user information
 
 
 # OAuth callback handling will be moved to backend API
@@ -87,6 +63,183 @@ def get_backend_url() -> str:
         port = os.getenv("PORT", 8080)
         agent_url = f"http://{host}:{port}"
     return agent_url
+
+
+def check_login_status() -> dict:
+    """Check if user is logged in by calling the auth status API."""
+    try:
+        backend_url = get_backend_url()
+        
+        # Get session token from multiple sources
+        session_token = None
+        
+        # 1. Check query params (for initial login callback)
+        if "session_token" in st.query_params:
+            session_token = st.query_params["session_token"]
+            # Store it in session state for immediate use
+            st.session_state["session_token"] = session_token
+            st.session_state["persistent_auth"] = True
+        
+        # 2. Check session state (for current session)
+        if not session_token:
+            session_token = st.session_state.get("session_token")
+        
+        if session_token:
+            # Call backend to validate session
+            headers = {"Cookie": f"session_token={session_token}"}
+            response = httpx.get(f"{backend_url}/api/auth/status", headers=headers)
+            
+            if response.status_code == 200:
+                auth_data = response.json()
+                if auth_data.get("authenticated"):
+                    # Store user info for persistence
+                    st.session_state["user_info"] = auth_data
+                    st.session_state["persistent_auth"] = True
+                    
+                    # Ensure session token is in URL for persistence across page reloads
+                    if "session_token" not in st.query_params:
+                        # Add session token to URL for persistence
+                        st.query_params["session_token"] = session_token
+                        # Don't rerun here - let the main function handle it
+                    
+                    return auth_data
+                else:
+                    # Session is invalid, clear it
+                    clear_session_token()
+            else:
+                # Session validation failed, clear it
+                clear_session_token()
+        
+        # Default to not authenticated
+        return {"authenticated": False}
+        
+    except Exception as e:
+        st.error(f"Error checking login status: {e}")
+        return {"authenticated": False}
+
+
+def clear_session_token() -> None:
+    """Clear session token from all storage locations."""
+    # Clear from session state
+    if "session_token" in st.session_state:
+        del st.session_state["session_token"]
+    if "persistent_auth" in st.session_state:
+        del st.session_state["persistent_auth"]
+    if "user_info" in st.session_state:
+        del st.session_state["user_info"]
+    
+    # Clear from URL parameters
+    if "session_token" in st.query_params:
+        del st.query_params["session_token"]
+
+
+def start_login_flow() -> None:
+    """Start the Google OAuth login flow."""
+    try:
+        backend_url = get_backend_url()
+        response = httpx.post(f"{backend_url}/api/auth/login/start")
+        
+        if response.status_code == 200:
+            data = response.json()
+            # Redirect to Google OAuth
+            st.link_button(
+                "🔐 Login with Google", 
+                data["authorization_url"],
+                use_container_width=True
+            )
+        else:
+            st.error("Failed to start login flow")
+            
+    except Exception as e:
+        st.error(f"Error starting login flow: {e}")
+
+
+def logout_user() -> None:
+    """Logout the current user."""
+    try:
+        backend_url = get_backend_url()
+        
+        # Get session token
+        session_token = st.session_state.get("session_token") or st.query_params.get("session_token")
+        
+        if session_token:
+            headers = {"Cookie": f"session_token={session_token}"}
+            response = httpx.post(f"{backend_url}/api/auth/logout", headers=headers)
+            
+            if response.status_code == 200:
+                # Clear session from all storage locations
+                clear_session_token()
+                if "session_token" in st.query_params:
+                    del st.query_params["session_token"]
+                st.success("Successfully logged out")
+                st.rerun()
+            else:
+                st.error("Failed to logout")
+        else:
+            # Clear any stale tokens
+            clear_session_token()
+            st.warning("No active session found")
+            
+    except Exception as e:
+        st.error(f"Error during logout: {e}")
+
+
+def show_login_page() -> None:
+    """Show the login page for unauthenticated users."""
+    st.title(f"{APP_ICON} {APP_TITLE}")
+    st.subheader("🔐 Authentication Required")
+    
+    st.markdown("""
+    This application requires authentication to access your personal data and integrations.
+    
+    **Features available after login:**
+    - Personal AI assistant with conversation history
+    - Google Calendar integration for scheduling
+    - Weekly review and planning tools
+    - Journaling and task management
+    """)
+    
+    # Check for login success/error messages
+    if "login_success" in st.query_params:
+        st.success("✅ Login successful! The page will refresh automatically.")
+        # Clear the query param and refresh
+        del st.query_params["login_success"]
+        st.rerun()
+    
+    if "login_error" in st.query_params:
+        error_msg = st.query_params["login_error"]
+        st.error(f"❌ Login failed: {error_msg}")
+        # Clear the query param
+        del st.query_params["login_error"]
+    
+    st.divider()
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        start_login_flow()
+    
+    st.divider()
+    
+    st.markdown("""
+    **Privacy & Security:**
+    - Your data is encrypted and stored securely
+    - Only you can access your personal information
+    - OAuth integrations use secure, industry-standard protocols
+    - You can revoke access at any time
+    """)
+
+
+async def handle_login_callback():
+    """Handle login callback and session token from URL parameters."""
+    # Check if we got a session token from login callback
+    if "session_token" in st.query_params:
+        session_token = st.query_params["session_token"]
+        st.session_state["session_token"] = session_token
+        # Clean up both query params
+        del st.query_params["session_token"]
+        if "login_success" in st.query_params:
+            del st.query_params["login_success"]
+        st.rerun()
 
 
 def call_oauth_status_api(user_id: str) -> dict:
@@ -365,9 +518,9 @@ def refresh_google_token(google_user_id: str) -> bool:
         return False
 
 
-def test_oauth_connection(service: str, user_id: str) -> bool:
+def test_oauth_connection(service: str, oauth_user_id: str) -> bool:
     """Test OAuth connection using backend API."""
-    health = call_oauth_health_api(service, user_id)
+    health = call_oauth_health_api(service, oauth_user_id)
     if health["status"] == "healthy":
         st.success(f"✅ {service.title()} connection working!")
         return True
@@ -419,9 +572,11 @@ async def handle_oauth_messages() -> None:
         st.success(f"✅ {message}")
         # Clean up URL parameters and refresh OAuth status
         st.query_params.clear()
-        # Refresh OAuth status
-        user_id = get_or_create_user_id()
-        load_oauth_status_from_api(user_id)
+        # Refresh OAuth status using authenticated user
+        login_status = check_login_status()
+        if login_status.get("authenticated"):
+            user_email = login_status.get("email")
+            load_oauth_status_from_api(user_email)
         st.rerun()
 
     elif oauth_error:
@@ -455,10 +610,23 @@ async def main() -> None:
         await asyncio.sleep(0.1)
         st.rerun()
 
-    # Get or create user ID
-    user_id = get_or_create_user_id()
+    # Handle login callback first
+    await handle_login_callback()
+    
+    # Check authentication status
+    login_status = check_login_status()
+    
+    if not login_status.get("authenticated", False):
+        # Show login page if not authenticated
+        show_login_page()
+        return
+    
+    # User is authenticated - get user info
+    user_id = login_status.get("user_id")  # Internal app user ID from auth system
+    user_email = login_status.get("email", "Unknown")
+    user_name = login_status.get("name", "User")
 
-    # Initialize agent client first
+    # Initialize agent client
     if "agent_client" not in st.session_state:
         load_dotenv()
         agent_url = os.getenv("AGENT_URL")
@@ -476,7 +644,9 @@ async def main() -> None:
     agent_client: AgentClient = st.session_state.agent_client
 
     # Load OAuth status from backend API (requires agent_client to be initialized)
-    load_oauth_status_from_api(user_id)
+    # Use the logged-in user's email as the OAuth user identifier
+    oauth_user_id = user_email  # Use email as the OAuth identifier
+    load_oauth_status_from_api(oauth_user_id)
 
     # Handle OAuth success/error messages from URL parameters
     await handle_oauth_messages()
@@ -498,15 +668,29 @@ async def main() -> None:
     # Config options
     with st.sidebar:
         st.header(f"{APP_ICON} {APP_TITLE}")
+        
+        # User info section
+        with st.container():
+            st.markdown(f"**👤 Logged in as:**")
+            st.markdown(f"📧 {user_email}")
+            if user_name and user_name != "User":
+                st.markdown(f"👋 {user_name}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🚪 Logout", use_container_width=True):
+                    logout_user()
+            with col2:
+                if st.button(":material/chat: New Chat", use_container_width=True):
+                    st.session_state.messages = []
+                    st.session_state.thread_id = str(uuid.uuid4())
+                    st.rerun()
 
+        st.divider()
+        
         ""
         "Full toolkit for running an AI agent service built with LangGraph, FastAPI and Streamlit"
         ""
-
-        if st.button(":material/chat: New Chat", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.thread_id = str(uuid.uuid4())
-            st.rerun()
 
         with st.popover(":material/settings: Settings", use_container_width=True):
             model_idx = agent_client.info.models.index(agent_client.info.default_model)
@@ -519,9 +703,6 @@ async def main() -> None:
                 index=agent_idx,
             )
             use_streaming = st.toggle("Stream results", value=True)
-
-            # Display user ID (for debugging or user information)
-            st.text_input("User ID (read-only)", value=user_id, disabled=True)
 
         # OAuth Configuration Section for Weekly Review Agent
         @st.dialog("🔗 OAuth Configuration")
@@ -537,7 +718,7 @@ async def main() -> None:
             todoist_status = st.session_state.oauth_status["todoist"]
             if todoist_status["connected"]:
                 # Get health information
-                health = call_oauth_health_api("todoist", user_id)
+                health = call_oauth_health_api("todoist", user_email)
 
                 # Display status with health indicator
                 st.success(
@@ -552,15 +733,23 @@ async def main() -> None:
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.button("🔄 Test", key="todoist_test"):
-                        test_oauth_connection("todoist", user_id)
+                        test_oauth_connection("todoist", user_email)
                 with col2:
                     if st.button("🔃 Refresh", key="todoist_refresh"):
-                        if refresh_todoist_token(user_id):
-                            st.rerun()
+                        if refresh_todoist_token(user_email):
+                            st.success("✅ Todoist token refreshed successfully")
+                            # Reload OAuth status without full page reload
+                            load_oauth_status_from_api(user_email)
+                        else:
+                            st.error("❌ Failed to refresh Todoist token")
                 with col3:
                     if st.button("❌ Remove", key="todoist_disconnect"):
                         if disconnect_todoist_account(user_id):
-                            st.rerun()
+                            st.success("✅ Todoist account disconnected")
+                            # Reload OAuth status without full page reload
+                            load_oauth_status_from_api(user_email)
+                        else:
+                            st.error("❌ Failed to disconnect Todoist account")
 
                 # Show warning if token needs attention
                 if health["status"] in ["expired", "expiring_soon", "invalid"]:
@@ -626,7 +815,6 @@ async def main() -> None:
                                         st.session_state[
                                             f"show_calendar_config_{i}"
                                         ] = False
-                                        st.rerun()
 
                                 st.info(
                                     "📅 Calendar management will be available when backend APIs are implemented."
@@ -666,7 +854,11 @@ async def main() -> None:
                         with col1:
                             if st.button("🔄 Refresh", key=f"google_refresh_{i}"):
                                 if refresh_google_token(account["user_id"]):
-                                    st.rerun()
+                                    st.success("✅ Google token refreshed successfully")
+                                    # Reload OAuth status without full page reload
+                                    load_oauth_status_from_api(user_email)
+                                else:
+                                    st.error("❌ Failed to refresh Google token")
 
                         with col2:
                             if st.button("🔃 Reload Calendars", key=f"reload_cal_{i}"):
@@ -682,7 +874,11 @@ async def main() -> None:
                                 if disconnect_google_account_by_email(
                                     user_id, account["email"]
                                 ):
-                                    st.rerun()
+                                    st.success("✅ Google account disconnected")
+                                    # Reload OAuth status without full page reload
+                                    load_oauth_status_from_api(user_email)
+                                else:
+                                    st.error("❌ Failed to disconnect Google account")
 
             else:
                 st.warning("⚠️ No Google accounts connected")
@@ -728,7 +924,7 @@ async def main() -> None:
                 if st.button("🔄 Refresh All", key="refresh_all_accounts"):
                     refresh_count = 0
                     if todoist_status["connected"]:
-                        if refresh_todoist_token(user_id):
+                        if refresh_todoist_token(user_email):
                             refresh_count += 1
 
                     for account in google_accounts:
@@ -737,7 +933,8 @@ async def main() -> None:
 
                     if refresh_count > 0:
                         st.success(f"✅ Refreshed {refresh_count} account(s)")
-                        st.rerun()
+                        # Reload OAuth status without full page reload
+                        load_oauth_status_from_api(user_email)
                     else:
                         st.error("❌ No accounts could be refreshed")
 
@@ -826,9 +1023,9 @@ async def main() -> None:
             # if it's not localhost, switch to https by default
             if not st_base_url.startswith("https") and "localhost" not in st_base_url:
                 st_base_url = st_base_url.replace("http", "https")
-            # Include both thread_id and user_id in the URL for sharing to maintain user identity
+            # Include thread_id in the URL for sharing (user identity maintained via login)
             chat_url = (
-                f"{st_base_url}?thread_id={st.session_state.thread_id}&{USER_ID_COOKIE}={user_id}"
+                f"{st_base_url}?thread_id={st.session_state.thread_id}"
             )
             st.markdown(f"**Chat URL:**\n```text\n{chat_url}\n```")
             st.info("Copy the above URL to share or revisit this chat")

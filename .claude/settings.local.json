@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(uv lock:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": []
+  }
+}
