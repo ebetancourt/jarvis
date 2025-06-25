@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 
 import httpx
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
@@ -56,7 +57,7 @@ APP_ICON = "🧰"
 
 # OAuth HTTP Client Functions for Backend API
 def get_backend_url() -> str:
-    """Get the backend service URL."""
+    """Get the backend service URL for server-side requests."""
     agent_url = os.getenv("AGENT_URL")
     if not agent_url:
         host = os.getenv("HOST", "0.0.0.0")
@@ -65,72 +66,325 @@ def get_backend_url() -> str:
     return agent_url
 
 
+def get_browser_backend_url() -> str:
+    """Get the backend service URL for browser-side JavaScript requests."""
+    # Always use localhost for browser requests, never Docker internal hostnames
+    port = os.getenv("PORT", 8080)
+    return f"http://localhost:{port}"
+
+
+def get_session_token_from_storage() -> str:
+    """Get session token from browser localStorage/cookies using JavaScript."""
+    html_code = """
+    <script>
+    console.log(document.cookie.split(';'));
+    // Helper function to get cookie value
+    function getCookie(name) {
+        const value = "; " + document.cookie;
+        const parts = value.split("; " + name + "=");
+        if (parts.length === 2) {
+            return parts.pop().split(";").shift();
+        }
+        return null;
+    }
+
+    // Check localStorage first, then cookies
+    var sessionToken = localStorage.getItem('jarvis_session_token') || getCookie('session_token');
+
+    // Send token back to Streamlit
+    window.parent.postMessage({
+        type: 'streamlit:setComponentValue',
+        value: sessionToken || null
+    }, '*');
+    </script>
+    """
+    return components.html(html_code, height=0)
+
+
+def store_session_token_in_storage(token: str) -> None:
+    """Store session token in browser localStorage and cookies using JavaScript."""
+    html_code = f"""
+    <script>
+    // Store session token in localStorage
+    localStorage.setItem('jarvis_session_token', '{token}');
+
+    // Store in cookie for consistency (non-HttpOnly)
+    document.cookie = 'jarvis_session_token={token}; path=/; max-age=' + (30 * 24 * 60 * 60) + '; SameSite=Lax';
+
+    // Confirm storage
+    window.parent.postMessage({{
+        type: 'streamlit:setComponentValue',
+        value: 'stored'
+    }}, '*');
+    </script>
+    """
+    components.html(html_code, height=0)
+
+
+def clear_session_token_from_storage() -> None:
+    """Clear session token from browser storage using JavaScript."""
+    html_code = """
+    <script>
+    // Clear session token from localStorage
+    localStorage.removeItem('jarvis_session_token');
+
+    // Clear all session_token cookies (both our custom and backend-set)
+    document.cookie = 'jarvis_session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = 'session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
+    // Confirm cleared
+    window.parent.postMessage({
+        type: 'streamlit:setComponentValue',
+        value: 'cleared'
+    }, '*');
+    </script>
+    """
+    components.html(html_code, height=0)
+
+
+def init_session_from_browser() -> None:
+    """Initialize session token from browser storage on first load."""
+    html_code = """
+    <script>
+    function getCookie(name) {
+        const value = "; " + document.cookie;
+        const parts = value.split("; " + name + "=");
+        if (parts.length === 2) {
+            return parts.pop().split(";").shift();
+        }
+        return null;
+    }
+
+    // Check for existing session token in browser storage
+    var sessionToken = localStorage.getItem('jarvis_session_token') || getCookie('session_token');
+
+    if (sessionToken && sessionToken !== 'null') {
+        // Store in localStorage for consistency
+        localStorage.setItem('jarvis_session_token', sessionToken);
+
+        // Redirect to include session token in URL for Streamlit to pick up
+        if (!window.location.search.includes('session_token=')) {
+            window.location.href = window.location.pathname + '?session_token=' + sessionToken;
+        }
+    }
+    </script>
+    """
+    components.html(html_code, height=0)
+
+
+def clear_session_from_memory_only() -> None:
+    """Clear session from memory but leave browser storage intact."""
+    # Only clear from session state, don't touch browser storage
+    if "session_token" in st.session_state:
+        del st.session_state["session_token"]
+    if "user_info" in st.session_state:
+        del st.session_state["user_info"]
+    if "browser_checked" in st.session_state:
+        del st.session_state["browser_checked"]
+
+
+def show_session_recovery_component() -> None:
+    """Show a persistent component that tries to recover session tokens."""
+    # Only run once per Streamlit session
+    if st.session_state.get("session_recovery_shown"):
+        return
+    
+    st.session_state["session_recovery_shown"] = True
+    
+    html_code = """
+    <script>
+    // Prevent infinite loops by checking if recovery has already run
+    if (localStorage.getItem('session_recovery_running') === 'true') {
+        console.log('⚠️ Session recovery already running, skipping...');
+        return;
+    }
+    
+    localStorage.setItem('session_recovery_running', 'true');
+    
+    function getCookie(name) {
+        const value = "; " + document.cookie;
+        const parts = value.split("; " + name + "=");
+        if (parts.length === 2) {
+            return parts.pop().split(";").shift();
+        }
+        return null;
+    }
+    
+    console.log('🔄 Session recovery component loaded');
+    console.log('📄 All cookies:', document.cookie);
+    console.log('💾 localStorage jarvis_session_token:', localStorage.getItem('jarvis_session_token'));
+    console.log('🍪 session_token cookie:', getCookie('session_token'));
+    
+    // Check for existing session token in browser storage
+    var localStorageToken = localStorage.getItem('jarvis_session_token');
+    var cookieToken = getCookie('session_token');
+    var urlParams = new URLSearchParams(window.location.search);
+    var urlToken = urlParams.get('session_token');
+    
+    console.log('URL token:', urlToken);
+    
+    var sessionToken = urlToken || localStorageToken || cookieToken;
+    
+    if (sessionToken && sessionToken !== 'null' && sessionToken !== 'undefined') {
+        console.log('✅ Found session token from:', urlToken ? 'URL' : localStorageToken ? 'localStorage' : 'cookie');
+        
+        // Store in localStorage for consistency
+        localStorage.setItem('jarvis_session_token', sessionToken);
+        
+        // If token is not in URL, add it and reload once
+        if (!urlToken) {
+            console.log('🔄 Adding session token to URL and reloading...');
+            var newUrl = window.location.pathname + '?session_token=' + sessionToken;
+            window.location.href = newUrl;
+        } else {
+            console.log('✅ Session token already in URL');
+            localStorage.removeItem('session_recovery_running');
+        }
+    } else {
+        console.log('❌ No session token found anywhere');
+        localStorage.removeItem('session_recovery_running');
+    }
+    </script>
+    """
+    components.html(html_code, height=0)
+
+
+def check_backend_session_via_browser() -> dict:
+    """Check if backend has a valid session by making a request that includes browser cookies."""
+    try:
+        # Use browser-safe URL for JavaScript requests
+        backend_url = get_browser_backend_url()
+
+        html_code = f"""
+        <script>
+        console.log('Checking backend session at: {backend_url}');
+        // Make a request to the backend auth status endpoint
+        // This will automatically include cookies set by the backend
+        fetch('{backend_url}/api/auth/status', {{
+            method: 'GET',
+            credentials: 'include'  // Include cookies
+        }})
+        .then(response => response.json())
+        .then(data => {{
+            // Send the result back to Streamlit
+            window.parent.postMessage({{
+                type: 'streamlit:setComponentValue',
+                value: JSON.stringify(data)
+            }}, '*');
+        }})
+        .catch(error => {{
+            window.parent.postMessage({{
+                type: 'streamlit:setComponentValue',
+                value: JSON.stringify({{"authenticated": false, "error": error.message}})
+            }}, '*');
+        }});
+        </script>
+        """
+
+        # Execute the JavaScript and get the result
+        result = components.html(html_code, height=0)
+
+        if result:
+            try:
+                import json
+
+                return json.loads(result)
+            except:
+                pass
+    except:
+        pass
+
+    return {"authenticated": False}
+
+
 def check_login_status() -> dict:
     """Check if user is logged in by calling the auth status API."""
     try:
         backend_url = get_backend_url()
-        
-        # Get session token from multiple sources
         session_token = None
-        
-        # 1. Check query params (for initial login callback)
+
+        # 1. Check query params first (for initial login callback)
         if "session_token" in st.query_params:
             session_token = st.query_params["session_token"]
-            # Store it in session state for immediate use
+            # Store in session state for current session
             st.session_state["session_token"] = session_token
-            st.session_state["persistent_auth"] = True
-        
+            # Clear from URL now that it's stored
+            del st.query_params["session_token"]
+
         # 2. Check session state (for current session)
         if not session_token:
             session_token = st.session_state.get("session_token")
-        
+
+        # 3. If no session token, try to extract it from browser cookies/localStorage
+        if not session_token and not st.session_state.get("browser_checked"):
+            st.session_state["browser_checked"] = True
+            # Show a component that will extract token and reload page if found
+            init_session_from_browser()
+
         if session_token:
             # Call backend to validate session
             headers = {"Cookie": f"session_token={session_token}"}
             response = httpx.get(f"{backend_url}/api/auth/status", headers=headers)
-            
+
             if response.status_code == 200:
                 auth_data = response.json()
                 if auth_data.get("authenticated"):
-                    # Store user info for persistence
+                    # Store user info in session state
                     st.session_state["user_info"] = auth_data
-                    st.session_state["persistent_auth"] = True
-                    
-                    # Ensure session token is in URL for persistence across page reloads
-                    if "session_token" not in st.query_params:
-                        # Add session token to URL for persistence
-                        st.query_params["session_token"] = session_token
-                        # Don't rerun here - let the main function handle it
-                    
                     return auth_data
-                else:
-                    # Session is invalid, clear it
-                    clear_session_token()
-            else:
-                # Session validation failed, clear it
-                clear_session_token()
-        
+                # Only clear if backend explicitly says not authenticated
+                elif not auth_data.get("authenticated"):
+                    clear_session_from_memory_only()
+            # Only clear on explicit unauthorized status
+            elif response.status_code == 401:
+                clear_session_from_memory_only()
+
         # Default to not authenticated
         return {"authenticated": False}
-        
+
     except Exception as e:
         st.error(f"Error checking login status: {e}")
         return {"authenticated": False}
 
 
-def clear_session_token() -> None:
-    """Clear session token from all storage locations."""
+def clear_session_token_safely() -> None:
+    """Clear session token only when we're sure it's invalid."""
     # Clear from session state
     if "session_token" in st.session_state:
         del st.session_state["session_token"]
-    if "persistent_auth" in st.session_state:
-        del st.session_state["persistent_auth"]
     if "user_info" in st.session_state:
         del st.session_state["user_info"]
-    
+    if "cached_browser_token" in st.session_state:
+        del st.session_state["cached_browser_token"]
+    if "browser_storage_checked" in st.session_state:
+        del st.session_state["browser_storage_checked"]
+
     # Clear from URL parameters
     if "session_token" in st.query_params:
         del st.query_params["session_token"]
+
+    # Clear from browser storage
+    clear_session_token_from_storage()
+
+
+def clear_session_token() -> None:
+    """Clear session token from all storage locations (used by logout)."""
+    # Clear from session state
+    if "session_token" in st.session_state:
+        del st.session_state["session_token"]
+    if "user_info" in st.session_state:
+        del st.session_state["user_info"]
+    if "cached_browser_token" in st.session_state:
+        del st.session_state["cached_browser_token"]
+    if "browser_storage_checked" in st.session_state:
+        del st.session_state["browser_storage_checked"]
+
+    # Clear from URL parameters
+    if "session_token" in st.query_params:
+        del st.query_params["session_token"]
+
+    # Clear from browser storage
+    clear_session_token_from_storage()
 
 
 def start_login_flow() -> None:
@@ -138,18 +392,18 @@ def start_login_flow() -> None:
     try:
         backend_url = get_backend_url()
         response = httpx.post(f"{backend_url}/api/auth/login/start")
-        
+
         if response.status_code == 200:
             data = response.json()
             # Redirect to Google OAuth
             st.link_button(
-                "🔐 Login with Google", 
+                "🔐 Login with Google",
                 data["authorization_url"],
-                use_container_width=True
+                use_container_width=True,
             )
         else:
             st.error("Failed to start login flow")
-            
+
     except Exception as e:
         st.error(f"Error starting login flow: {e}")
 
@@ -158,68 +412,68 @@ def logout_user() -> None:
     """Logout the current user."""
     try:
         backend_url = get_backend_url()
-        
+
         # Get session token
-        session_token = st.session_state.get("session_token") or st.query_params.get("session_token")
-        
+        session_token = st.session_state.get("session_token")
+
         if session_token:
             headers = {"Cookie": f"session_token={session_token}"}
             response = httpx.post(f"{backend_url}/api/auth/logout", headers=headers)
-            
+
             if response.status_code == 200:
-                # Clear session from all storage locations
-                clear_session_token()
-                if "session_token" in st.query_params:
-                    del st.query_params["session_token"]
                 st.success("Successfully logged out")
-                st.rerun()
             else:
-                st.error("Failed to logout")
-        else:
-            # Clear any stale tokens
-            clear_session_token()
-            st.warning("No active session found")
-            
+                st.warning("Logout completed (server error)")
+
+        # Clear session from all storage locations regardless
+        clear_session_token()
+        st.rerun()
+
     except Exception as e:
+        # Clear session even on error
+        clear_session_token()
         st.error(f"Error during logout: {e}")
+        st.rerun()
 
 
 def show_login_page() -> None:
     """Show the login page for unauthenticated users."""
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.subheader("🔐 Authentication Required")
-    
-    st.markdown("""
+
+    st.markdown(
+        """
     This application requires authentication to access your personal data and integrations.
-    
+
     **Features available after login:**
     - Personal AI assistant with conversation history
     - Google Calendar integration for scheduling
     - Weekly review and planning tools
     - Journaling and task management
-    """)
-    
+    """
+    )
+
     # Check for login success/error messages
     if "login_success" in st.query_params:
         st.success("✅ Login successful! The page will refresh automatically.")
         # Clear the query param and refresh
         del st.query_params["login_success"]
         st.rerun()
-    
+
     if "login_error" in st.query_params:
         error_msg = st.query_params["login_error"]
         st.error(f"❌ Login failed: {error_msg}")
         # Clear the query param
         del st.query_params["login_error"]
-    
+
     st.divider()
-    
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         start_login_flow()
-    
+
     st.divider()
-    
+
     st.markdown("""
     **Privacy & Security:**
     - Your data is encrypted and stored securely
@@ -610,17 +864,20 @@ async def main() -> None:
         await asyncio.sleep(0.1)
         st.rerun()
 
+    # Always show session recovery component (runs once per session)
+    show_session_recovery_component()
+    
     # Handle login callback first
     await handle_login_callback()
-    
+
     # Check authentication status
     login_status = check_login_status()
-    
+
     if not login_status.get("authenticated", False):
         # Show login page if not authenticated
         show_login_page()
         return
-    
+
     # User is authenticated - get user info
     user_id = login_status.get("user_id")  # Internal app user ID from auth system
     user_email = login_status.get("email", "Unknown")
@@ -668,14 +925,14 @@ async def main() -> None:
     # Config options
     with st.sidebar:
         st.header(f"{APP_ICON} {APP_TITLE}")
-        
+
         # User info section
         with st.container():
             st.markdown(f"**👤 Logged in as:**")
             st.markdown(f"📧 {user_email}")
             if user_name and user_name != "User":
                 st.markdown(f"👋 {user_name}")
-            
+
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🚪 Logout", use_container_width=True):
@@ -687,7 +944,7 @@ async def main() -> None:
                     st.rerun()
 
         st.divider()
-        
+
         ""
         "Full toolkit for running an AI agent service built with LangGraph, FastAPI and Streamlit"
         ""
@@ -707,7 +964,15 @@ async def main() -> None:
         # OAuth Configuration Section for Weekly Review Agent
         @st.dialog("🔗 OAuth Configuration")
         def oauth_config_dialog() -> None:
-            st.subheader("🔗 External Integrations")
+            # Close button at the top
+            col1, col2 = st.columns([8, 1])
+            with col1:
+                st.subheader("🔗 External Integrations")
+            with col2:
+                if st.button("❌", key="close_oauth_dialog", help="Close"):
+                    st.session_state.show_oauth_dialog = False
+                    st.rerun()
+
             st.caption("Configure OAuth connections for enhanced weekly reviews")
 
             # OAuth status is loaded by load_oauth_status_from_api function
@@ -994,6 +1259,10 @@ async def main() -> None:
                                 st.write(result)
 
         if st.button(":material/sync: OAuth Configuration", use_container_width=True):
+            st.session_state.show_oauth_dialog = True
+
+        # Show OAuth dialog if triggered
+        if st.session_state.get("show_oauth_dialog", False):
             oauth_config_dialog()
 
         @st.dialog("Architecture")

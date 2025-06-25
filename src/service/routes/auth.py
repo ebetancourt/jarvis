@@ -165,14 +165,15 @@ async def login_callback(
             status_code=302
         )
         
-        # Also set HTTP-only cookie for API access (when ports align in production)
+        # Set accessible cookie for cross-port session management
         redirect_response.set_cookie(
             key="session_token",
             value=session_token,
             max_age=30 * 24 * 60 * 60,  # 30 days
-            httponly=True,
+            httponly=False,  # Allow JavaScript access for cross-port usage
             secure=os.getenv("ENVIRONMENT") == "production",  # HTTPS in production
-            samesite="lax"
+            samesite="lax",
+            domain="localhost"  # Set domain to allow cross-port access
         )
         
         return redirect_response

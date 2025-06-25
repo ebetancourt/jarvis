@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langchain_core._api import LangChainBetaWarning
@@ -93,6 +94,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware to allow cross-origin requests from Streamlit frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",  # Streamlit development server
+        "http://127.0.0.1:8501",  # Alternative localhost
+        "http://0.0.0.0:8501",    # Docker network access
+    ],
+    allow_credentials=True,  # Allow cookies to be sent with requests
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 router = APIRouter(dependencies=[Depends(verify_bearer)])
 
 
