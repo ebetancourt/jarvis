@@ -50,11 +50,20 @@ class DeepseekModelName(StrEnum):
 
 
 class AnthropicModelName(StrEnum):
-    """https://docs.anthropic.com/en/docs/about-claude/models#model-names"""
+    """https://docs.anthropic.com/en/docs/about-claude/models"""
 
-    HAIKU_3 = "claude-3-haiku"
+    # Latest Claude 4 series (2025)
+    OPUS_4 = "claude-4-opus"
+    SONNET_4 = "claude-4-sonnet"
+    
+    # Claude 3.5 series
     HAIKU_35 = "claude-3.5-haiku"
     SONNET_35 = "claude-3.5-sonnet"
+    
+    # Legacy Claude 3 series
+    HAIKU_3 = "claude-3-haiku"
+    SONNET_3 = "claude-3-sonnet"
+    OPUS_3 = "claude-3-opus"
 
 
 class GoogleModelName(StrEnum):

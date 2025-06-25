@@ -408,7 +408,9 @@ async def show_authenticated_app():
                         "gpt-4o",
                         "gpt-4-turbo",
                         "gpt-3.5-turbo",
-                        # Anthropic
+                        # Anthropic - Latest Claude 4 series (2025)
+                        "claude-4-sonnet",  # Latest Claude 4 Sonnet
+                        "claude-4-opus",  # Latest Claude 4 Opus
                         "claude-3.5-sonnet",
                         "claude-3.5-haiku",
                         "claude-3-haiku",
@@ -433,7 +435,7 @@ async def show_authenticated_app():
                     default_model_index = 0
             except Exception:
                 # Fallback if anything goes wrong
-                available_models = ["o4-mini", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini", "claude-3.5-haiku"]
+                available_models = ["o4-mini", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini", "claude-4-sonnet", "claude-3.5-haiku"]
                 default_model_index = 0
 
             selected_model = st.selectbox(
