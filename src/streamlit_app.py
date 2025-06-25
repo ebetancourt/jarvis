@@ -399,29 +399,41 @@ async def show_authenticated_app():
                 else:
                     # Fallback model list (comprehensive list from schema)
                     available_models = [
+                        # OpenAI - Latest and most economical first
+                        "o4-mini",  # Most economical reasoning model
+                        "gpt-4.1-nano",  # Fastest and cheapest
+                        "gpt-4.1-mini",  # 83% cheaper than gpt-4o
+                        "gpt-4.1",  # Latest flagship model
+                        "gpt-4o-mini",
                         "gpt-4o",
-                        "gpt-4o-mini", 
+                        "gpt-4-turbo",
+                        "gpt-3.5-turbo",
+                        # Anthropic
                         "claude-3.5-sonnet",
                         "claude-3.5-haiku",
                         "claude-3-haiku",
-                        "gemini-1.5-pro",
+                        # Google
                         "gemini-2.0-flash",
+                        "gemini-1.5-pro",
                         "gemini-1.5-pro-002",
                         "gemini-2.5-pro-preview-05-06",
+                        # Other providers
                         "deepseek-chat",
-                        "llama-3.1-8b",
                         "llama-3.3-70b",
+                        "llama-3.1-8b",
+                        # Cloud-specific
                         "azure-gpt-4o",
                         "azure-gpt-4o-mini",
                         "bedrock-3.5-haiku",
                         "bedrock-3.5-sonnet",
+                        # Generic
                         "ollama",
                         "openai-compatible"
                     ]
                     default_model_index = 0
             except Exception:
                 # Fallback if anything goes wrong
-                available_models = ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3.5-haiku"]
+                available_models = ["o4-mini", "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini", "claude-3.5-haiku"]
                 default_model_index = 0
 
             selected_model = st.selectbox(
@@ -453,7 +465,7 @@ async def show_authenticated_app():
             st.session_state.agent_client,
             user_id,
             st.session_state.get("selected_agent", "research-assistant"),
-            st.session_state.get("selected_model", "gpt-4o"),
+            st.session_state.get("selected_model", "o4-mini"),
             st.session_state.get("thread_id", "default")
         )
     else:
@@ -481,7 +493,7 @@ async def show_authenticated_app():
                     # Get non-streaming response for testing
                     response = await st.session_state.agent_client.ainvoke(
                         message=prompt,
-                        model=st.session_state.get("selected_model", "gpt-4o"),
+                        model=st.session_state.get("selected_model", "o4-mini"),
                         thread_id=st.session_state.get("thread_id", "default"),
                         user_id=user_id
                     )
