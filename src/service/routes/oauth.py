@@ -219,12 +219,17 @@ async def disconnect_oauth_service(
             detail=f"Unsupported service: {service}",
         )
 
-    # TODO: Implement in Task 2.10 with OAuth service layer
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OAuth service layer not yet implemented. "
-        "Will be completed in Task 2.10.",
-    )
+    oauth_service = get_oauth_service()
+    try:
+        success = oauth_service.remove_token(service, user_id)
+        return OAuthDisconnectResponse(
+            success=success,
+            message=f"Successfully disconnected {service.title()}" if success else f"Failed to disconnect {service.title()}"
+        )
+    except OAuthServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
 @router.post("/refresh/{service}/{user_id}", response_model=OAuthRefreshResponse)
