@@ -311,7 +311,7 @@ async def show_authenticated_app():
     # Initialize agent client
     if "agent_client" not in st.session_state:
         st.session_state.agent_client = initialize_agent_client()
-        
+
     # Set agent from URL parameter if provided
     current_agent = st.query_params.get("agent", "research-assistant")
     if "agent_client" in st.session_state:
@@ -353,7 +353,7 @@ async def show_authenticated_app():
 
             # Get current agent from URL or default
             current_agent_from_url = st.query_params.get("agent", "research-assistant")
-            
+
             # Set default index based on URL parameter
             default_index = 0
             if current_agent_from_url in agent_names:
@@ -474,7 +474,7 @@ async def show_authenticated_app():
         # Agent-specific welcome message
         current_agent = st.query_params.get("agent", "research-assistant")
         welcome_message = get_agent_welcome_message(current_agent)
-        
+
         with st.chat_message("assistant", avatar="🤖"):
             st.markdown(welcome_message)
 
@@ -520,16 +520,24 @@ async def main():
         initial_sidebar_state="expanded"
     )
 
-    # Hide Streamlit branding
-    st.markdown("""
+    # Hide Streamlit branding and fix emoji rendering
+    st.markdown(
+        """
     <style>
     [data-testid="stStatusWidget"] {
         visibility: hidden;
         height: 0%;
         position: fixed;
     }
+    [data-testid="chatAvatarIcon-assistant"],
+    [data-testid="stChatMessage"],
+    [data-testid="chatAvatarIcon-user"] {
+        font-family: sans-serif !important;
+    }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # Check authentication using Streamlit's official authentication
     if st.user.is_logged_in:
