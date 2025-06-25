@@ -1,5 +1,5 @@
 """
-Agent Service Toolkit - Official Streamlit Google Authentication
+Agent Service Toolkit - Streamlit Application with Official Google Authentication
 
 This application uses Streamlit's official Google authentication (1.42.0+)
 for secure user authentication and session management.
@@ -17,6 +17,7 @@ APP_ICON = "🧰"
 
 # Environment variables
 BACKEND_URL = os.getenv("BACKEND_URL", "http://agent_service:8080")
+STREAMLIT_URL = os.getenv("STREAMLIT_URL", "http://localhost:8501")
 
 
 def get_backend_url() -> str:
@@ -33,13 +34,15 @@ def get_available_agents() -> list:
         if response.status_code == 200:
             return response.json()
         else:
+            st.error(f"Failed to fetch agents: {response.status_code}")
             return [{"name": "research_assistant", "description": "Research assistant with web search"}]
-    except Exception:
+    except Exception as e:
+        st.error(f"Error fetching agents: {e}")
         return [{"name": "research_assistant", "description": "Research assistant with web search"}]
 
 
-def show_login_page():
-    """Show the login page with Google authentication."""
+def show_authentication_required():
+    """Show authentication required page."""
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.subheader("🔐 Authentication Required")
     
@@ -53,61 +56,68 @@ def show_login_page():
     - Journaling and task management
     """)
     
-    # Official Streamlit Google authentication
-    if st.button("🔐 Login with Google", type="primary", use_container_width=True):
-        st.login()
+    st.info("Please click the 'Sign in with Google' button in the top-right corner to continue.")
 
 
-@st.dialog("🔗 OAuth Configuration")
-def show_oauth_configuration():
-    """Show OAuth configuration in a modal dialog."""
-    st.markdown("### 🔗 External Integrations")
-    st.caption("Configure OAuth connections for enhanced weekly reviews")
-    
-    # Todoist Integration
-    st.markdown("#### 📝 Todoist Integration")
-    st.warning("⚠️ Not connected to Todoist")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔗 Connect Todoist Account", key="connect_todoist"):
-            st.info("Todoist integration would be implemented here")
-    with col2:
-        if st.button("📊 Show Todoist Details", key="show_todoist"):
-            st.info("Todoist details would be shown here")
-    
-    st.markdown("---")
-    
-    # Google Calendar Integration  
-    st.markdown("#### 📅 Google Calendar Integration")
-    st.success("✅ 1 Google account(s) connected")
-    st.caption("Using the same Google account as your login")
-    
-    # Close button
-    if st.button("Close", key="close_oauth", type="primary"):
-        st.rerun()
+def setup_authenticated_user(user_info: Dict[str, Any]) -> str:
+    """Set up authenticated user with backend and return user ID."""
+    try:
+        # For now, use email as user ID (in production, you'd have proper user mapping)
+        user_id = user_info.get("email", "unknown_user")
+        
+        # Store user info in session state
+        st.session_state["user_id"] = user_id
+        st.session_state["user_email"] = user_info.get("email")
+        st.session_state["user_name"] = user_info.get("name", "User")
+        
+        return user_id
+        
+    except Exception as e:
+        st.error(f"Error setting up user: {e}")
+        return "unknown_user"
 
 
-def show_authenticated_app():
+def show_oauth_configuration(user_email: str):
+    """Show OAuth configuration in a modal-like expander."""
+    with st.expander("🔗 OAuth Configuration", expanded=False):
+        st.markdown("### 🔗 External Integrations")
+        st.caption("Configure OAuth connections for enhanced weekly reviews")
+        
+        # Todoist Integration
+        st.markdown("#### 📝 Todoist Integration")
+        st.warning("⚠️ Not connected to Todoist")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔗 Connect Todoist Account"):
+                st.info("Todoist integration would be implemented here")
+        with col2:
+            if st.button("📊 Show Todoist Details"):
+                st.info("Todoist details would be shown here")
+        
+        # Google Calendar Integration  
+        st.markdown("#### 📅 Google Calendar Integration")
+        st.success("✅ 1 Google account(s) connected")
+        st.caption("Using the same Google account as your login")
+
+
+def show_authenticated_app(user_info: Dict[str, Any]):
     """Show the main application for authenticated users."""
+    # Set up user
+    user_id = setup_authenticated_user(user_info)
+    
     st.title(f"{APP_ICON} {APP_TITLE}")
     
     # Sidebar with user info and controls
     with st.sidebar:
         st.markdown("### 👤 Logged in as:")
-        # Handle both authenticated and test mode
-        if hasattr(st, 'user') and st.user.is_logged_in:
-            st.markdown(f"📧 {st.user.email}")
-            st.markdown(f"👋 {st.user.name}")
-        else:
-            st.markdown("📧 test@example.com")
-            st.markdown("👋 Test User")
+        st.markdown(f"📧 {user_info.get('email', 'Unknown')}")
+        st.markdown(f"👋 {user_info.get('name', 'User')}")
         
         if st.button("📋 Logout", use_container_width=True):
-            if hasattr(st, 'user') and st.user.is_logged_in:
-                st.logout()
-            else:
-                st.info("Test mode - no actual logout")
+            # Use Streamlit's logout functionality
+            st.session_state.clear()
+            st.rerun()
         
         if st.button("💬 New Chat", use_container_width=True):
             st.session_state.messages = []
@@ -136,8 +146,7 @@ def show_authenticated_app():
             )
         
         # OAuth Configuration
-        if st.button("🔗 OAuth Configuration", use_container_width=True):
-            show_oauth_configuration()
+        show_oauth_configuration(user_info.get('email'))
     
     # Main chat interface
     if "messages" not in st.session_state:
@@ -163,17 +172,13 @@ def show_authenticated_app():
         # Add assistant response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Handle both authenticated and test mode
-                user_name = "Test User"
-                if hasattr(st, 'user') and st.user.is_logged_in:
-                    user_name = st.user.name
-                
-                response = f"Hello {user_name}! I received your message: '{prompt}'. This is using official Streamlit authentication!"
+                # Placeholder response - in real implementation, this would call the agent
+                response = f"I received your message: '{prompt}'. This is a placeholder response using the official Streamlit authentication!"
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
 
-def main():
+async def main():
     """Main application entry point with official Google authentication."""
     st.set_page_config(
         page_title=APP_TITLE,
@@ -193,14 +198,20 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
+    # Configure Google authentication
+    st.auth_config = {
+        "client_id": st.secrets["google_oauth"]["client_id"],
+        "redirect_uri": st.secrets["google_oauth"]["redirect_uri"]
+    }
+    
     # Check authentication using Streamlit's official authentication
-    if st.user.is_logged_in:
+    if st.user_info:
         # User is authenticated
-        show_authenticated_app()
+        show_authenticated_app(st.user_info)
     else:
         # User is not authenticated
-        show_login_page()
+        show_authentication_required()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

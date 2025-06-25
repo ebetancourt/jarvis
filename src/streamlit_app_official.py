@@ -58,34 +58,28 @@ def show_login_page():
         st.login()
 
 
-@st.dialog("🔗 OAuth Configuration")
 def show_oauth_configuration():
-    """Show OAuth configuration in a modal dialog."""
-    st.markdown("### 🔗 External Integrations")
-    st.caption("Configure OAuth connections for enhanced weekly reviews")
-    
-    # Todoist Integration
-    st.markdown("#### 📝 Todoist Integration")
-    st.warning("⚠️ Not connected to Todoist")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔗 Connect Todoist Account", key="connect_todoist"):
-            st.info("Todoist integration would be implemented here")
-    with col2:
-        if st.button("📊 Show Todoist Details", key="show_todoist"):
-            st.info("Todoist details would be shown here")
-    
-    st.markdown("---")
-    
-    # Google Calendar Integration  
-    st.markdown("#### 📅 Google Calendar Integration")
-    st.success("✅ 1 Google account(s) connected")
-    st.caption("Using the same Google account as your login")
-    
-    # Close button
-    if st.button("Close", key="close_oauth", type="primary"):
-        st.rerun()
+    """Show OAuth configuration in an expander."""
+    with st.expander("🔗 OAuth Configuration", expanded=False):
+        st.markdown("### 🔗 External Integrations")
+        st.caption("Configure OAuth connections for enhanced weekly reviews")
+        
+        # Todoist Integration
+        st.markdown("#### 📝 Todoist Integration")
+        st.warning("⚠️ Not connected to Todoist")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔗 Connect Todoist Account"):
+                st.info("Todoist integration would be implemented here")
+        with col2:
+            if st.button("📊 Show Todoist Details"):
+                st.info("Todoist details would be shown here")
+        
+        # Google Calendar Integration  
+        st.markdown("#### 📅 Google Calendar Integration")
+        st.success("✅ 1 Google account(s) connected")
+        st.caption("Using the same Google account as your login")
 
 
 def show_authenticated_app():
@@ -95,19 +89,11 @@ def show_authenticated_app():
     # Sidebar with user info and controls
     with st.sidebar:
         st.markdown("### 👤 Logged in as:")
-        # Handle both authenticated and test mode
-        if hasattr(st, 'user') and st.user.is_logged_in:
-            st.markdown(f"📧 {st.user.email}")
-            st.markdown(f"👋 {st.user.name}")
-        else:
-            st.markdown("📧 test@example.com")
-            st.markdown("👋 Test User")
+        st.markdown(f"📧 {st.user.email}")
+        st.markdown(f"👋 {st.user.name}")
         
         if st.button("📋 Logout", use_container_width=True):
-            if hasattr(st, 'user') and st.user.is_logged_in:
-                st.logout()
-            else:
-                st.info("Test mode - no actual logout")
+            st.logout()
         
         if st.button("💬 New Chat", use_container_width=True):
             st.session_state.messages = []
@@ -136,8 +122,7 @@ def show_authenticated_app():
             )
         
         # OAuth Configuration
-        if st.button("🔗 OAuth Configuration", use_container_width=True):
-            show_oauth_configuration()
+        show_oauth_configuration()
     
     # Main chat interface
     if "messages" not in st.session_state:
@@ -163,12 +148,7 @@ def show_authenticated_app():
         # Add assistant response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Handle both authenticated and test mode
-                user_name = "Test User"
-                if hasattr(st, 'user') and st.user.is_logged_in:
-                    user_name = st.user.name
-                
-                response = f"Hello {user_name}! I received your message: '{prompt}'. This is using official Streamlit authentication!"
+                response = f"Hello {st.user.name}! I received your message: '{prompt}'. This is using official Streamlit authentication!"
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 

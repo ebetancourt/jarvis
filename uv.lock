@@ -13,6 +13,7 @@ name = "agent-service-toolkit"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "authlib" },
     { name = "black" },
     { name = "chromadb" },
     { name = "coverage" },
@@ -76,6 +77,7 @@ dependencies = [
 
 [package.dev-dependencies]
 client = [
+    { name = "authlib" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -94,6 +96,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "authlib", specifier = ">=1.3.2" },
     { name = "black", specifier = "==24.2.0" },
     { name = "chromadb", specifier = ">=1.0.10" },
     { name = "coverage" },
@@ -147,7 +150,7 @@ requires-dist = [
     { name = "requests", specifier = "~=2.32.0" },
     { name = "sentence-transformers", specifier = ">=2.6.0" },
     { name = "setuptools", specifier = "~=75.6.0" },
-    { name = "streamlit", specifier = "~=1.40.1" },
+    { name = "streamlit", specifier = ">=1.42.0" },
     { name = "tavily-python" },
     { name = "tiktoken", specifier = ">=0.8.0" },
     { name = "unstructured", extras = ["md"], specifier = "==0.17.2" },
@@ -157,10 +160,11 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 client = [
+    { name = "authlib", specifier = ">=1.3.2" },
     { name = "httpx", specifier = "~=0.27.2" },
     { name = "pydantic", specifier = "~=2.10.1" },
     { name = "python-dotenv", specifier = "~=1.0.1" },
-    { name = "streamlit", specifier = "~=1.40.1" },
+    { name = "streamlit", specifier = ">=1.42.0" },
 ]
 dev = [
     { name = "mypy" },
@@ -353,6 +357,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5a/b0/1367933a8532ee6ff8d63537de4f1177af4bff9f3e829baf7331f595bb24/attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b", size = 812032, upload-time = "2025-03-13T11:10:22.779Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/06/bb80f5f86020c4551da315d78b3ab75e8228f89f0162f2c3a819e407941a/attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3", size = 63815, upload-time = "2025-03-13T11:10:21.14Z" },
+]
+
+[[package]]
+name = "authlib"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a2/9d/b1e08d36899c12c8b894a44a5583ee157789f26fc4b176f8e4b6217b56e1/authlib-1.6.0.tar.gz", hash = "sha256:4367d32031b7af175ad3a323d571dc7257b7099d55978087ceae4a0d88cd3210", size = 158371, upload-time = "2025-05-23T00:21:45.011Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/29/587c189bbab1ccc8c86a03a5d0e13873df916380ef1be461ebe6acebf48d/authlib-1.6.0-py2.py3-none-any.whl", hash = "sha256:91685589498f79e8655e8a8947431ad6288831d643f11c55c2143ffcc738048d", size = 239981, upload-time = "2025-05-23T00:21:43.075Z" },
 ]
 
 [[package]]
@@ -4605,7 +4621,7 @@ wheels = [
 
 [[package]]
 name = "streamlit"
-version = "1.40.2"
+version = "1.46.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "altair" },
@@ -4622,16 +4638,15 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pydeck" },
     { name = "requests" },
-    { name = "rich" },
     { name = "tenacity" },
     { name = "toml" },
     { name = "tornado" },
     { name = "typing-extensions" },
     { name = "watchdog", marker = "sys_platform != 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b0/e5/2bf2daa9c98658f1474bb64e7de030cbc4182b5f2b2196536efedaef02cb/streamlit-1.40.2.tar.gz", hash = "sha256:0cc131fc9b18065feaff8f6f241c81164ad37d8d9e3a85499a0240aaaf6a6a61", size = 8265763, upload-time = "2024-11-25T21:30:32.186Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/83/f2aac961479594d1d7ee42cf485e3674992769d506732005cea91e11504a/streamlit-1.46.0.tar.gz", hash = "sha256:0b2734b48f11f1e5c8046011b6b1a2274982dc657eef2ade8db70f0e1dc53dda", size = 9651454, upload-time = "2025-06-18T09:12:01.221Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/53/418536f5d0b87bfbe7bbd8c001983c27e9474f82723bd2e529660fd9a534/streamlit-1.40.2-py2.py3-none-any.whl", hash = "sha256:7f6d1379a590f9625a6aee79ca73ceccff03cd2e05a3acbe5fe98915c27a7ffe", size = 8644775, upload-time = "2024-11-25T21:30:28.306Z" },
+    { url = "https://files.pythonhosted.org/packages/be/26/79bbb77bec3d605f7de7a4b45c806b44d112e8c9bce77fb620e03d9f2b88/streamlit-1.46.0-py3-none-any.whl", hash = "sha256:f8624acabafcf18611a0fac2635cf181a7ba922b45bd131ae15fc8f80e1a5482", size = 10050930, upload-time = "2025-06-18T09:11:58.447Z" },
 ]
 
 [[package]]
