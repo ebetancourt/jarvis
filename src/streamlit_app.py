@@ -1,7 +1,7 @@
 """
 Agent Service Toolkit - Streamlit Application with Official Google Authentication
 
-This application combines the original agent chat functionality with 
+This application combines the original agent chat functionality with
 Streamlit's official Google authentication system.
 """
 
@@ -45,7 +45,7 @@ def get_or_create_user_id() -> str:
     # For authenticated users, use their email as the user ID
     if hasattr(st, 'user') and st.user.is_logged_in:
         return st.user.email
-    
+
     # Fallback to session-based user ID for development
     if USER_ID_COOKIE in st.session_state:
         return st.session_state[USER_ID_COOKIE]
@@ -145,14 +145,14 @@ def show_oauth_configuration(user_id: str):
     """Show OAuth configuration in a modal dialog."""
     st.markdown("### 🔗 External Integrations")
     st.caption("Configure OAuth connections for enhanced weekly reviews")
-    
+
     # Get real OAuth status from backend
     oauth_status = call_oauth_status_api(user_id)
-    
+
     # Todoist Integration
     st.markdown("#### 📝 Todoist Integration")
     todoist_status = oauth_status.get("todoist", {})
-    
+
     if todoist_status.get("connected", False):
         st.success("✅ Connected to Todoist")
         if st.button("🔌 Disconnect Todoist Account", key="disconnect_todoist"):
@@ -170,13 +170,13 @@ def show_oauth_configuration(user_id: str):
         with col2:
             if st.button("📊 Show Todoist Details", key="show_todoist"):
                 st.info("Todoist details would be shown here")
-    
+
     st.markdown("---")
-    
-    # Google Calendar Integration  
+
+    # Google Calendar Integration
     st.markdown("#### 📅 Google Calendar Integration")
     google_accounts = oauth_status.get("google_accounts", [])
-    
+
     if google_accounts:
         st.success(f"✅ {len(google_accounts)} Google account(s) connected")
         for account in google_accounts:
@@ -187,7 +187,7 @@ def show_oauth_configuration(user_id: str):
             result = call_oauth_start_api("google", user_id)
             if result and "auth_url" in result:
                 st.markdown(f"[Click here to authorize Google Calendar]({result['auth_url']})")
-    
+
     # Close button
     if st.button("Close", key="close_oauth", type="primary"):
         st.rerun()
@@ -197,17 +197,19 @@ def show_login_page():
     """Show the login page with Google authentication."""
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.subheader("🔐 Authentication Required")
-    
-    st.markdown("""
+
+    st.markdown(
+        """
     This application requires authentication to access your personal data and integrations.
-    
+
     **Features available after login:**
     - Personal AI assistant with conversation history
-    - Google Calendar integration for scheduling  
+    - Google Calendar integration for scheduling
     - Weekly review and planning tools
     - Journaling and task management
-    """)
-    
+    """
+    )
+
     # Official Streamlit Google authentication
     if st.button("🔐 Login with Google", type="primary", use_container_width=True):
         st.login()
@@ -222,10 +224,10 @@ async def draw_messages(
     thread_id: str = "default",
 ) -> None:
     """Draw a list of chat messages, handling both static and streaming messages."""
-    
+
     for i, message in enumerate(messages):
         message_key = f"message_{i}_{message.type}_{hash(message.content[:50])}"
-        
+
         if message.type == "human":
             with st.chat_message("user", avatar="👤"):
                 st.markdown(message.content)
@@ -236,17 +238,15 @@ async def draw_messages(
                     for tool_call in message.tool_calls:
                         with st.expander(f"🛠️ {tool_call.get('name', 'Tool Call')}"):
                             st.code(str(tool_call.get('args', {})), language='json')
-                
+
                 st.markdown(message.content)
-                
+
                 # Show feedback for AI messages
                 await handle_feedback(message, agent_client, message_key)
 
 
 async def handle_feedback(
-    message: ChatMessage, 
-    agent_client: AgentClient, 
-    message_key: str
+    message: ChatMessage, agent_client: AgentClient, message_key: str
 ) -> None:
     """Handle feedback collection for AI messages."""
     if hasattr(message, 'run_id') and message.run_id:
@@ -256,26 +256,43 @@ async def handle_feedback(
             existing_feedback = st.session_state[feedback_key]
             st.caption(f"👍 Feedback: {existing_feedback}/5")
             return
-        
+
         # Show feedback widget
         feedback = st.feedback("stars", key=f"{message_key}_feedback")
         if feedback is not None:
             try:
                 # Convert feedback to score (0-1 scale)
                 normalized_score = (feedback + 1) / 5.0
-                
+
                 await agent_client.acreate_feedback(
                     run_id=message.run_id,
-                    key="human-feedback-stars", 
+                    key="human-feedback-stars",
                     score=normalized_score,
                     kwargs={"comment": "In-line human feedback"},
                 )
-                
+
                 st.session_state[feedback_key] = feedback + 1
                 st.toast("Feedback recorded", icon="⭐")
-                
+
             except AgentClientError as e:
                 st.error(f"Error recording feedback: {e}")
+
+
+def get_agent_welcome_message(agent_name: str) -> str:
+    """Get the welcome message for a specific agent."""
+    messages = {
+        "research-assistant": "👋 Hello! I'm an AI-powered research assistant with web search and a calculator. Ask me anything!",
+        "jarvis": "👋 Hello! I'm Jarvis, Just a Rather Very Intelligent System. How can I help you today?",
+        "rag-assistant": "👋 Hello! I'm an AI-powered Company Policy & HR assistant with access to AcmeTech's Employee Handbook. I can help you find information about benefits, remote work, time-off policies, company values, and more. Ask me anything!",
+        "journaling-agent": "👋 Hello! I'm a journaling agent. I can help you journal your thoughts and feelings.",
+        "weekly-review-agent": "👋 Hello! I'm your GTD-style weekly review and planning assistant. I can help you review your week, plan ahead, and integrate with your tasks and calendar.",
+        "chatbot": "👋 Hello! I'm a simple chatbot. Ask me anything!",
+        "interrupt-agent": "👋 Hello! I'm an interrupt agent. Tell me your birthday and I will predict your personality!",
+        "command-agent": "👋 Hello! I'm a command agent. I can help you with system commands and automation.",
+        "bg-task-agent": "👋 Hello! I'm a background task agent. I can help you with long-running tasks.",
+        "knowledge-base-agent": "👋 Hello! I'm a knowledge base agent with access to Amazon Bedrock Knowledge Base.",
+    }
+    return messages.get(agent_name, "👋 Hello! I'm an AI agent. Ask me anything!")
 
 
 def initialize_agent_client() -> AgentClient:
@@ -287,14 +304,23 @@ def initialize_agent_client() -> AgentClient:
 async def show_authenticated_app():
     """Show the main application for authenticated users."""
     st.title(f"{APP_ICON} {APP_TITLE}")
-    
+
     # Get user ID
     user_id = get_or_create_user_id()
-    
+
     # Initialize agent client
     if "agent_client" not in st.session_state:
         st.session_state.agent_client = initialize_agent_client()
-    
+        
+    # Set agent from URL parameter if provided
+    current_agent = st.query_params.get("agent", "research-assistant")
+    if "agent_client" in st.session_state:
+        try:
+            st.session_state.agent_client.update_agent(current_agent)
+        except Exception:
+            # If agent from URL is invalid, ignore and use default
+            pass
+
     # Sidebar with user info and controls
     with st.sidebar:
         st.markdown("### 👤 Logged in as:")
@@ -305,67 +331,93 @@ async def show_authenticated_app():
         else:
             st.markdown("📧 test@example.com")
             st.markdown("👋 Test User")
-        
+
         if st.button("📋 Logout", use_container_width=True):
             if hasattr(st, 'user') and st.user.is_logged_in:
                 st.logout()
             else:
                 st.info("Test mode - no actual logout")
-        
+
         if st.button("💬 New Chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.chat_history = ChatHistory(messages=[])
             st.rerun()
-        
+
         st.markdown("---")
-        
+
         # Settings
         with st.expander("⚙️ Settings"):
             # Get available agents
             agents = get_available_agents()
             agent_names = [agent.get("name", "unknown") for agent in agents]
+
+            # Get current agent from URL or default
+            current_agent_from_url = st.query_params.get("agent", "research-assistant")
             
-            # Set default to research-assistant if available
+            # Set default index based on URL parameter
             default_index = 0
-            if "research-assistant" in agent_names:
+            if current_agent_from_url in agent_names:
+                default_index = agent_names.index(current_agent_from_url)
+            elif "research-assistant" in agent_names:
                 default_index = agent_names.index("research-assistant")
-            
+
             selected_agent = st.selectbox(
-                "🤖 Agent", 
+                "🤖 Agent",
                 options=agent_names,
                 index=default_index,
-                key="selected_agent"
+                key="selected_agent",
             )
-            
-            # Update the agent on the client when selection changes
+
+            # Handle agent selection change
             if "agent_client" in st.session_state and selected_agent:
-                try:
-                    st.session_state.agent_client.update_agent(selected_agent)
-                except Exception as e:
-                    st.error(f"Error updating agent: {e}")
-            
+                # Check if agent actually changed
+                if selected_agent != current_agent_from_url:
+                    # Update URL parameter and trigger reload
+                    st.query_params["agent"] = selected_agent
+                    # Clear chat history for new agent
+                    st.session_state.chat_history = ChatHistory(messages=[])
+                    # Update the client
+                    try:
+                        st.session_state.agent_client.update_agent(selected_agent)
+                    except Exception as e:
+                        st.error(f"Error updating agent: {e}")
+                    # Trigger page reload
+                    st.rerun()
+                else:
+                    # Just ensure the client has the right agent
+                    try:
+                        st.session_state.agent_client.update_agent(selected_agent)
+                    except Exception as e:
+                        st.error(f"Error updating agent: {e}")
+
             selected_model = st.selectbox(
-                "🧠 Model", 
-                options=["fake", "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3.5-haiku"],
+                "🧠 Model",
+                options=[
+                    "fake",
+                    "gpt-4o",
+                    "gpt-4o-mini",
+                    "claude-3.5-sonnet",
+                    "claude-3.5-haiku",
+                ],
                 index=0,
-                key="selected_model"
+                key="selected_model",
             )
-            
+
             # Thread ID for conversation persistence
             thread_id = st.text_input(
                 "🧵 Thread ID",
                 value=st.session_state.get("thread_id", "default"),
                 key="thread_id"
             )
-        
+
         # OAuth Configuration
         if st.button("🔗 OAuth Configuration", use_container_width=True):
             show_oauth_configuration(user_id)
-    
+
     # Initialize chat history
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = ChatHistory(messages=[])
-    
+
     # Display chat messages
     if st.session_state.chat_history.messages:
         await draw_messages(
@@ -377,20 +429,23 @@ async def show_authenticated_app():
             st.session_state.get("thread_id", "default")
         )
     else:
-        # Welcome message
+        # Agent-specific welcome message
+        current_agent = st.query_params.get("agent", "research-assistant")
+        welcome_message = get_agent_welcome_message(current_agent)
+        
         with st.chat_message("assistant", avatar="🤖"):
-            st.markdown("👋 Hello! I'm an AI-powered research assistant with web search and a calculator. Ask me anything!")
-    
+            st.markdown(welcome_message)
+
     # Chat input
     if prompt := st.chat_input("Your message"):
         # Add user message to history
         user_message = ChatMessage(type="human", content=prompt)
         st.session_state.chat_history.messages.append(user_message)
-        
+
         # Display user message
         with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
-        
+
         # Get AI response
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
@@ -402,12 +457,12 @@ async def show_authenticated_app():
                         thread_id=st.session_state.get("thread_id", "default"),
                         user_id=user_id
                     )
-                    
+
                     st.markdown(response.content)
-                    
+
                     # Add AI response to history
                     st.session_state.chat_history.messages.append(response)
-                    
+
                 except AgentClientError as e:
                     st.error(f"Error communicating with agent: {e}")
                 except Exception as e:
@@ -422,7 +477,7 @@ async def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+
     # Hide Streamlit branding
     st.markdown("""
     <style>
@@ -433,7 +488,7 @@ async def main():
     }
     </style>
     """, unsafe_allow_html=True)
-    
+
     # Check authentication using Streamlit's official authentication
     if st.user.is_logged_in:
         # User is authenticated
