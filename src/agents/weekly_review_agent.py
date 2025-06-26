@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
-from src.tools.todoist_tools import get_completed_tasks, get_all_tasks
+from src.tools.todoist_tools import get_completed_tasks, get_all_tasks, get_all_labels
 from src.tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
 )
@@ -320,21 +320,87 @@ def analyze_incomplete_tasks(user_id: str) -> str:
 
 
 @tool
-def identify_upcoming_priorities(weeks_ahead: int = 1) -> str:
+def identify_upcoming_priorities(user_id: str, weeks_ahead: int = 1) -> str:
     """
     Identify high-priority tasks and commitments for the upcoming period.
 
     Args:
+        user_id: User identifier for authentication
         weeks_ahead: Number of weeks to look ahead (default: 1)
 
     Returns:
         str: Analysis of upcoming priorities and scheduling recommendations
     """
-    # Placeholder implementation
-    return (
-        f"🎯 Upcoming priorities analysis placeholder for {weeks_ahead} week(s). "
-        "This will integrate with calendar availability and task deadlines."
+    try:
+        tasks = get_all_tasks(user_id)
+        labels = get_all_labels(user_id)
+        label_id_to_name = {label["id"]: label["name"].lower() for label in labels}
+    except Exception as e:
+        return f"❌ Error fetching tasks or labels: {e}"
+    now = datetime.now()
+    week_later = now + timedelta(days=7 * weeks_ahead)
+    high_priority = []
+    due_soon = []
+    urgent_important = []
+    for task in tasks:
+        # Priority 4 (highest)
+        if task.get("priority", 1) == 4:
+            high_priority.append(task)
+        # Due within next week
+        due = task.get("due")
+        due_date = None
+        if due and isinstance(due, dict):
+            due_str = due.get("date")
+            if due_str:
+                try:
+                    due_date = datetime.fromisoformat(due_str)
+                except Exception:
+                    pass
+        if due_date and now <= due_date <= week_later:
+            due_soon.append(task)
+        # Labeled as urgent/important
+        for label_id in task.get("labels", []):
+            label_name = label_id_to_name.get(label_id, "")
+            if "urgent" in label_name or "important" in label_name:
+                urgent_important.append(task)
+                break
+
+    # Remove duplicates
+    def unique_tasks(task_list):
+        seen = set()
+        unique = []
+        for t in task_list:
+            tid = t["id"]
+            if tid not in seen:
+                unique.append(t)
+                seen.add(tid)
+        return unique
+
+    high_priority = unique_tasks(high_priority)
+    due_soon = unique_tasks(due_soon)
+    urgent_important = unique_tasks(urgent_important)
+    # Format output
+    output = f"## 🎯 High-Priority Tasks for Next {weeks_ahead} Week(s)\n\n"
+    if high_priority:
+        output += "### 🔥 Priority 4 Tasks\n"
+        for t in high_priority:
+            output += f"- {t.get('content')} (Project: {t.get('project_id', '')})\n"
+    if due_soon:
+        output += "\n### ⏰ Due Soon (within next week)\n"
+        for t in due_soon:
+            due = t.get("due", {}).get("date", "")
+            output += f"- {t.get('content')} (Due: {due})\n"
+    if urgent_important:
+        output += "\n### 🚨 Labeled Urgent/Important\n"
+        for t in urgent_important:
+            output += f"- {t.get('content')} (Labels: {t.get('labels', [])})\n"
+    if not (high_priority or due_soon or urgent_important):
+        output += "No high-priority tasks identified for the upcoming week.\n"
+    output += (
+        "\n*Note: This logic uses priority, due date, and urgent/important labels. "
+        "Future improvements: integrate with calendar, user feedback, and project context.\n"
     )
+    return output
 
 
 @tool
