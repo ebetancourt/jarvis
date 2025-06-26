@@ -1054,3 +1054,414 @@ def set_task_due_date(
     except Exception as e:
         logger.error(f"Unexpected error setting due date for task {task_id}: {e}")
         raise TodoistAPIError(f"Unexpected error setting due date: {e}")
+
+
+# ==================== RECURRING TASKS SUPPORT ====================
+
+
+def is_recurring_task(task_data: Dict[str, Any]) -> bool:
+    """
+    Check if a task is a recurring task.
+
+    Args:
+        task_data: Task object from Todoist API
+
+    Returns:
+        bool: True if task has a recurring due date
+    """
+    try:
+        if not task_data or not isinstance(task_data, dict):
+            return False
+
+        due_info = task_data.get("due")
+        if not due_info or not isinstance(due_info, dict):
+            return False
+
+        return due_info.get("is_recurring", False)
+
+    except Exception as e:
+        logger.error(f"Error checking if task is recurring: {str(e)}")
+        return False
+
+
+def get_recurring_pattern(task_data: Dict[str, Any]) -> Optional[str]:
+    """
+    Get the recurring pattern string from a recurring task.
+
+    Args:
+        task_data: Task object from Todoist API
+
+    Returns:
+        Optional[str]: The recurring pattern string (e.g., "every day", "every week")
+    """
+    try:
+        if not is_recurring_task(task_data):
+            return None
+
+        due_info = task_data.get("due", {})
+        return due_info.get("string")
+
+    except Exception as e:
+        logger.error(f"Error getting recurring pattern: {str(e)}")
+        return None
+
+
+def create_recurring_task(
+    content: str,
+    due_string: str,
+    project_id: Optional[str] = None,
+    description: Optional[str] = None,
+    priority: Optional[int] = None,
+    labels: Optional[List[str]] = None,
+    section_id: Optional[str] = None,
+    parent_id: Optional[str] = None,
+    assignee_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Create a new recurring task with specified pattern.
+
+    Args:
+        content: Task content/title
+        due_string: Recurring pattern (e.g., "every day", "every mon, fri", "every 3 months")
+        project_id: Project ID (optional)
+        description: Task description (optional)
+        priority: Task priority 1-4 (optional)
+        labels: List of label names (optional)
+        section_id: Section ID (optional)
+        parent_id: Parent task ID for subtasks (optional)
+        assignee_id: Assignee user ID (optional)
+
+    Returns:
+        Optional[Dict]: Created task data or None if failed
+    """
+    try:
+        # Validate recurring pattern
+        if not _is_valid_recurring_pattern(due_string):
+            logger.warning(f"Invalid recurring pattern: {due_string}")
+
+        # Create task with due_string parameter
+        task_data = create_task(
+            content=content,
+            project_id=project_id,
+            description=description,
+            priority=priority,
+            labels=labels,
+            section_id=section_id,
+            parent_id=parent_id,
+            assignee_id=assignee_id,
+            due_string=due_string,
+        )
+
+        if task_data and is_recurring_task(task_data):
+            logger.info(
+                f"Successfully created recurring task: {content} with pattern: {due_string}"
+            )
+            return task_data
+        else:
+            logger.warning(
+                f"Task created but may not be recurring as expected: {content}"
+            )
+            return task_data
+
+    except Exception as e:
+        logger.error(f"Error creating recurring task: {str(e)}")
+        return None
+
+
+def get_next_occurrence_date(task_data: Dict[str, Any]) -> Optional[str]:
+    """
+    Get the next occurrence date for a recurring task.
+
+    Args:
+        task_data: Recurring task object from Todoist API
+
+    Returns:
+        Optional[str]: Next occurrence date in ISO format or None
+    """
+    try:
+        if not is_recurring_task(task_data):
+            logger.warning("Task is not recurring")
+            return None
+
+        due_info = task_data.get("due", {})
+        return due_info.get("date")
+
+    except Exception as e:
+        logger.error(f"Error getting next occurrence date: {str(e)}")
+        return None
+
+
+def complete_recurring_task(task_id: str) -> bool:
+    """
+    Complete a recurring task, which will automatically create the next occurrence.
+
+    Args:
+        task_id: ID of the recurring task to complete
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get task info to verify it's recurring
+        task = get_task_by_id(task_id)
+        if not task:
+            logger.error(f"Task not found: {task_id}")
+            return False
+
+        if not is_recurring_task(task):
+            logger.warning(f"Task {task_id} is not recurring")
+
+        # Complete the task - Todoist will automatically create next occurrence
+        success = complete_task(task_id)
+
+        if success and is_recurring_task(task):
+            logger.info(
+                f"Completed recurring task {task_id}, next occurrence should be created automatically"
+            )
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Error completing recurring task {task_id}: {str(e)}")
+        return False
+
+
+def get_all_recurring_tasks(project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Get all recurring tasks, optionally filtered by project.
+
+    Args:
+        project_id: Optional project ID to filter by
+
+    Returns:
+        List[Dict]: List of recurring tasks
+    """
+    try:
+        # Get all tasks
+        if project_id:
+            all_tasks = get_tasks_by_filter(f"#project:{project_id}")
+        else:
+            all_tasks = get_all_tasks()
+
+        if not all_tasks:
+            return []
+
+        # Filter for recurring tasks
+        recurring_tasks = [task for task in all_tasks if is_recurring_task(task)]
+
+        logger.info(
+            f"Found {len(recurring_tasks)} recurring tasks"
+            + (f" in project {project_id}" if project_id else "")
+        )
+
+        return recurring_tasks
+
+    except Exception as e:
+        logger.error(f"Error getting recurring tasks: {str(e)}")
+        return []
+
+
+def update_recurring_pattern(task_id: str, new_due_string: str) -> bool:
+    """
+    Update the recurring pattern of a task.
+
+    Args:
+        task_id: ID of the task to update
+        new_due_string: New recurring pattern
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Validate the new pattern
+        if not _is_valid_recurring_pattern(new_due_string):
+            logger.warning(f"Invalid recurring pattern: {new_due_string}")
+
+        # Update the task
+        success = update_task(task_id, due_string=new_due_string)
+
+        if success:
+            logger.info(
+                f"Updated recurring pattern for task {task_id} to: {new_due_string}"
+            )
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Error updating recurring pattern for task {task_id}: {str(e)}")
+        return False
+
+
+def convert_to_recurring_task(task_id: str, due_string: str) -> bool:
+    """
+    Convert a one-time task to a recurring task.
+
+    Args:
+        task_id: ID of the task to convert
+        due_string: Recurring pattern to apply
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get current task
+        task = get_task_by_id(task_id)
+        if not task:
+            logger.error(f"Task not found: {task_id}")
+            return False
+
+        # Check if already recurring
+        if is_recurring_task(task):
+            logger.warning(f"Task {task_id} is already recurring")
+            return update_recurring_pattern(task_id, due_string)
+
+        # Convert to recurring
+        success = update_task(task_id, due_string=due_string)
+
+        if success:
+            logger.info(
+                f"Converted task {task_id} to recurring with pattern: {due_string}"
+            )
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Error converting task {task_id} to recurring: {str(e)}")
+        return False
+
+
+def remove_recurring_pattern(task_id: str, new_due_date: Optional[str] = None) -> bool:
+    """
+    Remove recurring pattern from a task, making it a one-time task.
+
+    Args:
+        task_id: ID of the recurring task
+        new_due_date: Optional specific due date (YYYY-MM-DD format)
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get current task
+        task = get_task_by_id(task_id)
+        if not task:
+            logger.error(f"Task not found: {task_id}")
+            return False
+
+        if not is_recurring_task(task):
+            logger.warning(f"Task {task_id} is not recurring")
+            return True
+
+        # Update with specific date or remove date entirely
+        if new_due_date:
+            success = update_task(task_id, due_date=new_due_date)
+        else:
+            success = update_task(task_id, due_string="no date")
+
+        if success:
+            logger.info(f"Removed recurring pattern from task {task_id}")
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Error removing recurring pattern from task {task_id}: {str(e)}")
+        return False
+
+
+def _is_valid_recurring_pattern(due_string: str) -> bool:
+    """
+    Validate if a due string represents a valid recurring pattern.
+
+    Args:
+        due_string: The due string to validate
+
+    Returns:
+        bool: True if it appears to be a valid recurring pattern
+    """
+    if not due_string or not isinstance(due_string, str):
+        return False
+
+    # Convert to lowercase for checking
+    pattern = due_string.lower().strip()
+
+    # Common recurring keywords
+    recurring_keywords = [
+        "every",
+        "daily",
+        "weekly",
+        "monthly",
+        "yearly",
+        "quarterly",
+        "workday",
+        "weekend",
+        "weekday",
+    ]
+
+    # Check if any recurring keywords are present
+    return any(keyword in pattern for keyword in recurring_keywords)
+
+
+def get_recurring_task_summary(task_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get a summary of recurring task information.
+
+    Args:
+        task_data: Task object from Todoist API
+
+    Returns:
+        Dict: Summary with recurring task details
+    """
+    try:
+        summary = {
+            "is_recurring": is_recurring_task(task_data),
+            "pattern": None,
+            "next_date": None,
+            "has_time": False,
+            "timezone": None,
+        }
+
+        if summary["is_recurring"]:
+            due_info = task_data.get("due", {})
+            summary["pattern"] = due_info.get("string")
+            summary["next_date"] = due_info.get("date")
+            summary["has_time"] = due_info.get("datetime") is not None
+            summary["timezone"] = due_info.get("timezone")
+
+        return summary
+
+    except Exception as e:
+        logger.error(f"Error creating recurring task summary: {str(e)}")
+        return {
+            "is_recurring": False,
+            "pattern": None,
+            "next_date": None,
+            "has_time": False,
+            "timezone": None,
+        }
+
+
+# Common recurring patterns for easy reference
+COMMON_RECURRING_PATTERNS = {
+    "daily": "every day",
+    "weekly": "every week",
+    "monthly": "every month",
+    "yearly": "every year",
+    "weekdays": "every weekday",
+    "weekends": "every weekend",
+    "every_other_day": "every other day",
+    "every_other_week": "every other week",
+    "every_other_month": "every other month",
+    "quarterly": "every quarter",
+    "twice_weekly": "every mon, fri",
+    "three_times_weekly": "every mon, wed, fri",
+}
+
+
+def get_common_recurring_patterns() -> Dict[str, str]:
+    """
+    Get a dictionary of common recurring patterns.
+
+    Returns:
+        Dict[str, str]: Dictionary mapping pattern names to due_string values
+    """
+    return COMMON_RECURRING_PATTERNS.copy()

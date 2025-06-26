@@ -13,7 +13,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - `src/service/oauth_service.py` - Complete OAuth service layer implementation with token management, configuration loading, error handling, health checks, and dependency injection pattern.
 - `src/schema/oauth_models.py` - Comprehensive Pydantic models for OAuth API requests and responses with detailed field validation and OpenAPI documentation.
 - `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
-- `src/tools/todoist_tools.py` - Complete Todoist REST API v2 integration with functions for fetching tasks, projects, and labels, comprehensive error handling, rate limiting, and OAuth token management.
+- `src/tools/todoist_tools.py` - Complete Todoist REST API v2 integration with functions for fetching and updating tasks, projects, and labels, task status management (complete/reopen), task creation/deletion, bulk operations, comprehensive recurring task support (creation, detection, pattern management, completion handling), comprehensive error handling, rate limiting, and OAuth token management.
 - `tests/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
 - `src/tools/calendar_tools.py` - Google Calendar multi-account integration tools.
 - `tests/tools/calendar_tools.test.py` - Unit tests for calendar integration.
@@ -69,8 +69,8 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 
 - [ ] 3.0 Implement Todoist API Integration
   - [x] 3.1 Create `src/tools/todoist_tools.py` with functions to fetch tasks, projects, and labels (FR-006)
-  - [ ] 3.2 Implement task status update functionality to sync changes back to Todoist (FR-012)
-  - [ ] 3.3 Add support for handling both recurring and one-time tasks (FR-013)
+  - [x] 3.2 Implement task status update functionality to sync changes back to Todoist (FR-012)
+  - [x] 3.3 Add support for handling both recurring and one-time tasks (FR-013)
   - [ ] 3.4 Implement error handling and fallback mechanisms for API failures
   - [ ] 3.5 Create comprehensive unit tests for all Todoist integration functions
 
