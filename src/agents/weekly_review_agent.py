@@ -6,6 +6,7 @@ from src.tools.todoist_tools import get_completed_tasks
 from src.tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
 )
+from src.tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
 
 
 # Session management and context tools for memory handling
@@ -616,6 +617,179 @@ def review_areas_of_responsibility_and_projects() -> str:
     return output
 
 
+@tool
+def detect_recurring_themes_and_stressors(
+    weeks: int = 4,
+    stressor_keywords: list[str] = [
+        "stress",
+        "overwhelm",
+        "anxiety",
+        "blocked",
+        "frustration",
+        "tired",
+        "burnout",
+        "conflict",
+        "worry",
+        "deadline",
+        "pressure",
+        "problem",
+        "issue",
+        "challenge",
+        "difficult",
+        "delay",
+        "stuck",
+    ],
+) -> str:
+    """
+    Detect recurring themes and stressors from the past N weeks of journal entries and calendar events.
+
+    Args:
+        weeks: Number of weeks to look back (default: 4)
+        stressor_keywords: List of keywords to identify stressors
+
+    Returns:
+        str: Markdown summary of recurring themes and stressors
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    start_date = today - timedelta(days=7 * weeks)
+    # Search journal entries for recurring keywords, moods, and topics
+    # For simplicity, use a fixed set of common theme keywords
+    theme_keywords = [
+        "progress",
+        "success",
+        "growth",
+        "learning",
+        "family",
+        "work",
+        "project",
+        "goal",
+        "health",
+        "energy",
+        "focus",
+        "motivation",
+        "relationship",
+        "gratitude",
+        "win",
+        "milestone",
+        "habit",
+        "routine",
+        "reflection",
+        "achievement",
+    ]
+    # Find recurring themes
+    theme_counts = {}
+    for keyword in theme_keywords:
+        results = search_by_keywords(
+            keyword, search_content=True, search_frontmatter=True
+        )
+        count = sum(
+            1
+            for r in results
+            if r.get("date")
+            and start_date.strftime("%Y-%m-%d")
+            <= r["date"]
+            <= today.strftime("%Y-%m-%d")
+        )
+        if count > 0:
+            theme_counts[keyword] = count
+    # Find recurring stressors
+    stressor_counts = {}
+    for keyword in stressor_keywords:
+        results = search_by_keywords(
+            keyword, search_content=True, search_frontmatter=True
+        )
+        count = sum(
+            1
+            for r in results
+            if r.get("date")
+            and start_date.strftime("%Y-%m-%d")
+            <= r["date"]
+            <= today.strftime("%Y-%m-%d")
+        )
+        if count > 0:
+            stressor_counts[keyword] = count
+    # Find most common moods
+    mood_list = [
+        "stressed",
+        "anxious",
+        "tired",
+        "overwhelmed",
+        "happy",
+        "grateful",
+        "productive",
+        "motivated",
+        "calm",
+        "excited",
+    ]
+    mood_counts = {}
+    for mood in mood_list:
+        results = search_by_mood(mood)
+        count = sum(
+            1
+            for r in results
+            if r.get("date")
+            and start_date.strftime("%Y-%m-%d")
+            <= r["date"]
+            <= today.strftime("%Y-%m-%d")
+        )
+        if count > 0:
+            mood_counts[mood] = count
+    # Find most common topics
+    topic_list = [
+        "work",
+        "family",
+        "health",
+        "project",
+        "goal",
+        "relationship",
+        "stress",
+        "energy",
+        "habit",
+        "routine",
+    ]
+    topic_counts = {}
+    for topic in topic_list:
+        results = search_by_topics(topic)
+        count = sum(
+            1
+            for r in results
+            if r.get("date")
+            and start_date.strftime("%Y-%m-%d")
+            <= r["date"]
+            <= today.strftime("%Y-%m-%d")
+        )
+        if count > 0:
+            topic_counts[topic] = count
+    # Format summary
+    output = f"## 🔁 Recurring Themes and Stressors (Last {weeks} Weeks)\n\n"
+    output += "### 🌱 Recurring Themes\n"
+    if theme_counts:
+        for k, v in sorted(theme_counts.items(), key=lambda x: -x[1]):
+            output += f"- {k} ({v} mentions)\n"
+    else:
+        output += "No strong recurring themes detected.\n"
+    output += "\n### ⚠️ Recurring Stressors\n"
+    if stressor_counts or any(
+        m in mood_counts for m in ["stressed", "anxious", "tired", "overwhelmed"]
+    ):
+        for k, v in sorted(stressor_counts.items(), key=lambda x: -x[1]):
+            output += f"- {k} ({v} mentions)\n"
+        for m in ["stressed", "anxious", "tired", "overwhelmed"]:
+            if m in mood_counts:
+                output += f"- Mood: {m} ({mood_counts[m]} entries)\n"
+    else:
+        output += "No strong recurring stressors detected.\n"
+    output += "\n### 🏷️ Common Topics\n"
+    if topic_counts:
+        for k, v in sorted(topic_counts.items(), key=lambda x: -x[1]):
+            output += f"- {k} ({v} entries)\n"
+    else:
+        output += "No dominant topics found.\n"
+    return output
+
+
 # Configure tools for the weekly review agent including session management
 tools = [
     # Session management and context tools
@@ -634,6 +808,7 @@ tools = [
     suggest_data_improvement_strategies,
     adapt_review_for_sparse_data,
     review_areas_of_responsibility_and_projects,
+    detect_recurring_themes_and_stressors,
 ]
 
 current_date = datetime.now().strftime("%Y-%m-%d")
