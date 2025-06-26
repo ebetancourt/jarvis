@@ -476,6 +476,23 @@ class OAuthDatabase:
             print(f"Error setting OAuth metadata: {e}")
             return False
 
+    def remove_oauth_metadata(self, key: str) -> bool:
+        """Remove OAuth metadata value by key."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    DELETE FROM oauth_metadata WHERE key = ?
+                """,
+                    (key,),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+
+        except sqlite3.Error as e:
+            print(f"Error removing OAuth metadata: {e}")
+            return False
+
     def migrate_from_files(
         self,
         tokens_file: str = "oauth_tokens.json",
@@ -619,9 +636,9 @@ class OAuthDatabase:
             with self._get_connection() as conn:
                 cursor = conn.execute(
                     """
-                    SELECT app_user_id, google_user_id, email, name, picture_url, 
+                    SELECT app_user_id, google_user_id, email, name, picture_url,
                            is_primary_login, created_at, updated_at
-                    FROM user_accounts 
+                    FROM user_accounts
                     WHERE app_user_id = ?
                 """,
                     (app_user_id,),
@@ -638,9 +655,9 @@ class OAuthDatabase:
             with self._get_connection() as conn:
                 cursor = conn.execute(
                     """
-                    SELECT app_user_id, google_user_id, email, name, picture_url, 
+                    SELECT app_user_id, google_user_id, email, name, picture_url,
                            is_primary_login, created_at, updated_at
-                    FROM user_accounts 
+                    FROM user_accounts
                     WHERE google_user_id = ?
                 """,
                     (google_user_id,),
@@ -657,9 +674,9 @@ class OAuthDatabase:
             with self._get_connection() as conn:
                 cursor = conn.execute(
                     """
-                    SELECT app_user_id, google_user_id, email, name, picture_url, 
+                    SELECT app_user_id, google_user_id, email, name, picture_url,
                            is_primary_login, created_at, updated_at
-                    FROM user_accounts 
+                    FROM user_accounts
                     WHERE is_primary_login = TRUE
                     ORDER BY created_at ASC
                     LIMIT 1
@@ -704,9 +721,9 @@ class OAuthDatabase:
             with self._get_connection() as conn:
                 cursor = conn.execute(
                     """
-                    SELECT session_token, app_user_id, google_user_id, expires_at, 
+                    SELECT session_token, app_user_id, google_user_id, expires_at,
                            created_at, last_accessed_at, is_active
-                    FROM login_sessions 
+                    FROM login_sessions
                     WHERE session_token = ? AND is_active = TRUE
                 """,
                     (session_token,),
@@ -724,8 +741,8 @@ class OAuthDatabase:
                 current_time = time.time()
                 conn.execute(
                     """
-                    UPDATE login_sessions 
-                    SET last_accessed_at = ? 
+                    UPDATE login_sessions
+                    SET last_accessed_at = ?
                     WHERE session_token = ? AND is_active = TRUE
                 """,
                     (current_time, session_token),
@@ -742,8 +759,8 @@ class OAuthDatabase:
             with self._get_connection() as conn:
                 conn.execute(
                     """
-                    UPDATE login_sessions 
-                    SET is_active = FALSE 
+                    UPDATE login_sessions
+                    SET is_active = FALSE
                     WHERE session_token = ?
                 """,
                     (session_token,),
@@ -760,8 +777,8 @@ class OAuthDatabase:
             with self._get_connection() as conn:
                 conn.execute(
                     """
-                    UPDATE login_sessions 
-                    SET is_active = FALSE 
+                    UPDATE login_sessions
+                    SET is_active = FALSE
                     WHERE app_user_id = ?
                 """,
                     (app_user_id,),
@@ -779,7 +796,7 @@ class OAuthDatabase:
                 current_time = time.time()
                 cursor = conn.execute(
                     """
-                    DELETE FROM login_sessions 
+                    DELETE FROM login_sessions
                     WHERE expires_at < ? OR is_active = FALSE
                 """,
                     (current_time,),
@@ -797,9 +814,9 @@ class OAuthDatabase:
                 current_time = time.time()
                 cursor = conn.execute(
                     """
-                    SELECT session_token, app_user_id, google_user_id, expires_at, 
+                    SELECT session_token, app_user_id, google_user_id, expires_at,
                            created_at, last_accessed_at, is_active
-                    FROM login_sessions 
+                    FROM login_sessions
                     WHERE app_user_id = ? AND is_active = TRUE AND expires_at > ?
                     ORDER BY last_accessed_at DESC
                 """,

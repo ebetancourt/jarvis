@@ -14,7 +14,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - `src/schema/oauth_models.py` - Comprehensive Pydantic models for OAuth API requests and responses with detailed field validation and OpenAPI documentation.
 - `tests/agents/weekly_review_agent.test.py` - Unit tests for the weekly review agent.
 - `src/tools/todoist_tools.py` - Complete Todoist REST API v2 integration with functions for fetching and updating tasks, projects, and labels, task status management (complete/reopen), task creation/deletion, bulk operations, comprehensive recurring task support (creation, detection, pattern management, completion handling), advanced error handling with circuit breaker pattern, intelligent caching with TTL, health monitoring, graceful degradation, fallback mechanisms, batch operations, comprehensive resilience features, rate limiting, and OAuth token management.
-- `tests/tools/todoist_tools.test.py` - Unit tests for Todoist integration.
+- `tests/tools/test_todoist_tools.py` - Comprehensive unit tests for Todoist integration covering all API functions, authentication/error handling, task management, recurring tasks, circuit breaker functionality, caching, fallback mechanisms, health monitoring, and integration scenarios with extensive mocking and edge case testing.
 - `src/tools/calendar_tools.py` - Google Calendar multi-account integration tools.
 - `tests/tools/calendar_tools.test.py` - Unit tests for calendar integration.
 - `src/tools/weekly_review_tools.py` - Core weekly review analysis and processing tools.
@@ -67,12 +67,12 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 2.12 Update Streamlit OAuth Management button to use API endpoints
   - [x] 2.13 Test and validate client-server OAuth flow end-to-end
 
-- [ ] 3.0 Implement Todoist API Integration
+- [x] 3.0 Implement Todoist API Integration
   - [x] 3.1 Create `src/tools/todoist_tools.py` with functions to fetch tasks, projects, and labels (FR-006)
   - [x] 3.2 Implement task status update functionality to sync changes back to Todoist (FR-012)
   - [x] 3.3 Add support for handling both recurring and one-time tasks (FR-013)
   - [x] 3.4 Implement error handling and fallback mechanisms for API failures
-  - [ ] 3.5 Create comprehensive unit tests for all Todoist integration functions
+  - [x] 3.5 Create comprehensive unit tests for all Todoist integration functions
 
 - [ ] 4.0 Develop Google Calendar Multi-Account Integration
   - [ ] 4.1 Create `src/common/oauth_manager.py` for managing both Todoist and multiple Google account tokens (FR-008)
