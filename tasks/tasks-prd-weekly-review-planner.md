@@ -84,9 +84,9 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [ ] 4.7 Implement OAuth token refresh handling for both Todoist and multiple Google accounts
 
 - [ ] 5.0 Create Weekly Review Logic and Conversational Interface
-  - [ ] 5.1 Implement core weekly review process following GTD methodology (FR-001, FR-002, FR-003, FR-004)
-  - [ ] 5.2 Create areas of responsibility and active project review logic
-  - [ ] 5.3 Develop past week accomplishment identification from tasks and calendar events (FR-014)
+  - [x] 5.1 Implement core weekly review process following GTD methodology (FR-001, FR-002, FR-003, FR-004)
+  - [x] 5.2 Create areas of responsibility and active project review logic
+  - [x] 5.3 Develop past week accomplishment identification from tasks and calendar events (FR-014)
   - [ ] 5.4 Implement pattern detection for recurring themes and stressors (FR-015)
   - [ ] 5.5 Create logic to highlight uncompleted/stalled tasks by comparing to previous reviews (FR-016)
   - [ ] 5.6 Develop high-priority task identification for upcoming week (FR-017)

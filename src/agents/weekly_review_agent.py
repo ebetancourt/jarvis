@@ -1,7 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
+from src.tools.todoist_tools import get_completed_tasks
+from src.tools.calendar_tools import (
+    get_past_week_accomplishments as get_calendar_accomplishments,
+)
 
 
 # Session management and context tools for memory handling
@@ -176,25 +180,74 @@ def save_review_insights(
 # Placeholder tools for weekly review functionality
 # These will be expanded in later tasks
 
+
 @tool
 def get_past_week_accomplishments(
-    start_date: str | None = None, end_date: str | None = None
+    user_id: str, start_date: str | None = None, end_date: str | None = None
 ) -> str:
     """
     Analyze accomplishments from the past week using task and calendar data.
 
     Args:
+        user_id: User identifier for authentication
         start_date: Start date in YYYY-MM-DD format (optional, defaults to week start)
         end_date: End date in YYYY-MM-DD format (optional, defaults to today)
 
     Returns:
         str: Summary of past week accomplishments
     """
-    # Placeholder implementation
-    return (
-        "📅 Past week accomplishments analysis placeholder. "
-        "This will integrate with Todoist and Calendar APIs."
-    )
+    try:
+        today = datetime.now().date()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        if start_date:
+            week_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        if end_date:
+            week_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        # Fetch completed tasks from Todoist
+        completed = get_completed_tasks(
+            user_id, since=week_start, until=week_end, limit=100
+        )
+        completed_tasks = completed.get("items", [])
+
+        # Fetch calendar accomplishments
+        calendar_events = get_calendar_accomplishments()
+
+        output = f"## 🏆 Past Week Accomplishments ({week_start} to {week_end})\n\n"
+        output += "### ✅ Completed Tasks (Todoist)\n"
+        if completed_tasks:
+            for task in completed_tasks:
+                content = task.get("content") or task.get("title") or "Untitled Task"
+                project = task.get("project_id", "")
+                output += f"- {content} (Project: {project})\n"
+        else:
+            output += "No completed tasks found for this week.\n"
+
+        output += "\n### 📅 Calendar Accomplishments\n"
+        if calendar_events:
+            for event in calendar_events:
+                summary = (
+                    getattr(event, "summary", None)
+                    or getattr(event, "title", None)
+                    or "Untitled Event"
+                )
+                start = getattr(event, "start_time", None)
+                if start:
+                    start_str = start.strftime("%Y-%m-%d %H:%M")
+                    output += f"- {summary} ({start_str})\n"
+                else:
+                    output += f"- {summary}\n"
+        else:
+            output += "No calendar accomplishments found for this week.\n"
+
+        return output
+    except Exception as e:
+        return (
+            "📅 Past week accomplishments analysis placeholder. "
+            "This will integrate with Todoist and Calendar APIs.\n"
+            f"Error: {e}"
+        )
 
 
 @tool
@@ -520,6 +573,49 @@ def adapt_review_for_sparse_data(
     return output
 
 
+@tool
+def review_areas_of_responsibility_and_projects() -> str:
+    """
+    Guide the user through reviewing each area of responsibility and their active projects.
+
+    Returns:
+        str: Structured markdown summary of areas and projects review
+    """
+    professional_areas = [
+        ("Career/Professional Development", "advancement, skills, networking"),
+        ("Job Responsibilities", "primary work duties and projects"),
+        ("Team/Staff Management", "if managing others"),
+        ("Financial Management", "budgets, investments, financial goals"),
+        ("Business Development", "if entrepreneur or business owner"),
+    ]
+    personal_areas = [
+        ("Home & Property", "maintenance, organization, living environment"),
+        ("Family & Relationships", "spouse, children, extended family, friends"),
+        ("Health & Fitness", "physical health, exercise, nutrition, wellness"),
+        ("Personal Development", "learning, growth, hobbies, interests"),
+        ("Community & Service", "volunteering, civic engagement, giving back"),
+        ("Life Goals & Values", "purpose, spirituality, long-term vision"),
+    ]
+
+    output = "## 🗂️ Areas of Responsibility & Project Review\n\n"
+    output += "### Professional Areas\n"
+    for area, desc in professional_areas:
+        output += f"- **{area}** ({desc})\n"
+        output += "    - Are you giving this area enough attention?\n"
+        output += "    - List active projects in this area.\n"
+        output += "    - For each project: Is it active, stalled, completed, or new?\n"
+        output += "    - Any new projects or adjustments needed?\n"
+    output += "\n### Personal Areas\n"
+    for area, desc in personal_areas:
+        output += f"- **{area}** ({desc})\n"
+        output += "    - Are you giving this area enough attention?\n"
+        output += "    - List active projects in this area.\n"
+        output += "    - For each project: Is it active, stalled, completed, or new?\n"
+        output += "    - Any new projects or adjustments needed?\n"
+    output += "\nPlease provide your responses for each area. We'll summarize and update your project list accordingly.\n"
+    return output
+
+
 # Configure tools for the weekly review agent including session management
 tools = [
     # Session management and context tools
@@ -537,6 +633,7 @@ tools = [
     guide_manual_weekly_reflection,
     suggest_data_improvement_strategies,
     adapt_review_for_sparse_data,
+    review_areas_of_responsibility_and_projects,
 ]
 
 current_date = datetime.now().strftime("%Y-%m-%d")
