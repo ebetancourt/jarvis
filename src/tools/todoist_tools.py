@@ -8,9 +8,15 @@ existing OAuth infrastructure to handle authentication.
 
 import logging
 from datetime import datetime, date
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Callable
 import requests
 from requests.exceptions import RequestException, Timeout
+import json
+import time
+from functools import wraps
+from threading import Lock
+from dataclasses import dataclass
+from enum import Enum
 
 from service.oauth_service import get_oauth_service, OAuthToken
 
@@ -21,6 +27,341 @@ logger = logging.getLogger(__name__)
 TODOIST_API_BASE = "https://api.todoist.com/rest/v2"
 DEFAULT_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
+
+# ==================== FALLBACK AND RESILIENCE CONFIGURATION ====================
+
+# Circuit breaker configuration
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5  # failures before opening circuit
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 300  # seconds (5 minutes)
+CIRCUIT_BREAKER_SUCCESS_THRESHOLD = 3  # successes needed to close circuit
+
+# Cache configuration
+CACHE_DEFAULT_TTL = 300  # seconds (5 minutes)
+CACHE_OFFLINE_TTL = 3600  # seconds (1 hour) - longer cache for offline scenarios
+MAX_CACHE_SIZE = 1000  # maximum number of cached items
+
+# Health check configuration
+HEALTH_CHECK_INTERVAL = 60  # seconds
+HEALTH_CHECK_TIMEOUT = 10  # seconds
+
+
+class CircuitState(Enum):
+    """Circuit breaker states."""
+
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Circuit breaker tripped, failing fast
+    HALF_OPEN = "half_open"  # Testing if service has recovered
+
+
+@dataclass
+class CacheEntry:
+    """Cache entry with TTL and metadata."""
+
+    data: Any
+    timestamp: float
+    ttl: int
+    key: str
+
+
+class CircuitBreaker:
+    """Circuit breaker implementation for API resilience."""
+
+    def __init__(
+        self,
+        failure_threshold: int = CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        recovery_timeout: int = CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+        success_threshold: int = CIRCUIT_BREAKER_SUCCESS_THRESHOLD,
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.success_threshold = success_threshold
+
+        self.failure_count = 0
+        self.success_count = 0
+        self.state = CircuitState.CLOSED
+        self.last_failure_time = 0
+        self.lock = Lock()
+
+    def can_execute(self) -> bool:
+        """Check if circuit allows execution."""
+        with self.lock:
+            if self.state == CircuitState.CLOSED:
+                return True
+            elif self.state == CircuitState.OPEN:
+                if time.time() - self.last_failure_time > self.recovery_timeout:
+                    self.state = CircuitState.HALF_OPEN
+                    self.success_count = 0
+                    logger.info("Circuit breaker transitioning to HALF_OPEN")
+                    return True
+                return False
+            else:  # HALF_OPEN
+                return True
+
+    def record_success(self):
+        """Record a successful operation."""
+        with self.lock:
+            self.failure_count = 0
+            if self.state == CircuitState.HALF_OPEN:
+                self.success_count += 1
+                if self.success_count >= self.success_threshold:
+                    self.state = CircuitState.CLOSED
+                    logger.info("Circuit breaker CLOSED - service recovered")
+
+    def record_failure(self):
+        """Record a failed operation."""
+        with self.lock:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.failure_count >= self.failure_threshold:
+                self.state = CircuitState.OPEN
+                logger.warning(
+                    f"Circuit breaker OPEN - service degraded after {self.failure_count} failures"
+                )
+
+
+class APICache:
+    """Simple in-memory cache with TTL support."""
+
+    def __init__(self, max_size: int = MAX_CACHE_SIZE):
+        self.cache: Dict[str, CacheEntry] = {}
+        self.max_size = max_size
+        self.lock = Lock()
+
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached value if not expired."""
+        with self.lock:
+            if key not in self.cache:
+                return None
+
+            entry = self.cache[key]
+            if time.time() - entry.timestamp > entry.ttl:
+                del self.cache[key]
+                return None
+
+            logger.debug(f"Cache hit for key: {key}")
+            return entry.data
+
+    def set(self, key: str, data: Any, ttl: int = CACHE_DEFAULT_TTL):
+        """Set cached value with TTL."""
+        with self.lock:
+            # Remove expired entries if cache is full
+            if len(self.cache) >= self.max_size:
+                self._cleanup_expired()
+
+            # If still full, remove oldest entries
+            if len(self.cache) >= self.max_size:
+                oldest_key = min(
+                    self.cache.keys(), key=lambda k: self.cache[k].timestamp
+                )
+                del self.cache[oldest_key]
+
+            self.cache[key] = CacheEntry(
+                data=data, timestamp=time.time(), ttl=ttl, key=key
+            )
+            logger.debug(f"Cached data for key: {key} (TTL: {ttl}s)")
+
+    def _cleanup_expired(self):
+        """Remove expired cache entries."""
+        current_time = time.time()
+        expired_keys = [
+            key
+            for key, entry in self.cache.items()
+            if current_time - entry.timestamp > entry.ttl
+        ]
+        for key in expired_keys:
+            del self.cache[key]
+
+        if expired_keys:
+            logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+
+    def clear(self):
+        """Clear all cache entries."""
+        with self.lock:
+            self.cache.clear()
+            logger.debug("Cache cleared")
+
+
+class HealthMonitor:
+    """Health monitoring for Todoist API."""
+
+    def __init__(self):
+        self.last_check = 0
+        self.is_healthy = True
+        self.consecutive_failures = 0
+        self.lock = Lock()
+
+    def check_health(self, user_id: str) -> bool:
+        """Check API health with caching."""
+        current_time = time.time()
+
+        with self.lock:
+            # Use cached health status if recent
+            if current_time - self.last_check < HEALTH_CHECK_INTERVAL:
+                return self.is_healthy
+
+            self.last_check = current_time
+
+        try:
+            # Simple health check - try to get user info
+            response = requests.get(
+                f"{TODOIST_API_BASE}/projects",
+                headers={
+                    "Authorization": f"Bearer {_get_valid_token(user_id).access_token}"
+                },
+                timeout=HEALTH_CHECK_TIMEOUT,
+            )
+
+            is_healthy = response.status_code in [
+                200,
+                401,
+                403,
+            ]  # Service is up even if auth fails
+
+            with self.lock:
+                if is_healthy:
+                    self.consecutive_failures = 0
+                    if not self.is_healthy:
+                        logger.info("Todoist API health check: Service recovered")
+                else:
+                    self.consecutive_failures += 1
+                    if self.is_healthy and self.consecutive_failures >= 3:
+                        logger.warning("Todoist API health check: Service appears down")
+
+                self.is_healthy = is_healthy
+                return self.is_healthy
+
+        except Exception as e:
+            logger.debug(f"Health check failed: {e}")
+            with self.lock:
+                self.consecutive_failures += 1
+                if self.is_healthy and self.consecutive_failures >= 3:
+                    logger.warning("Todoist API health check: Service appears down")
+                self.is_healthy = False
+                return False
+
+
+# Global instances
+circuit_breaker = CircuitBreaker()
+api_cache = APICache()
+health_monitor = HealthMonitor()
+
+
+def with_fallback(
+    cache_key_func: Optional[Callable] = None,
+    cache_ttl: int = CACHE_DEFAULT_TTL,
+    fallback_data: Optional[Any] = None,
+    enable_circuit_breaker: bool = True,
+):
+    """
+    Decorator to add fallback mechanisms to API functions.
+
+    Args:
+        cache_key_func: Function to generate cache key from args
+        cache_ttl: Cache time-to-live in seconds
+        fallback_data: Default data to return if all else fails
+        enable_circuit_breaker: Whether to use circuit breaker
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Generate cache key if function provided
+            cache_key = None
+            if cache_key_func:
+                try:
+                    cache_key = cache_key_func(*args, **kwargs)
+                except Exception as e:
+                    logger.debug(f"Failed to generate cache key: {e}")
+
+            # Check circuit breaker
+            if enable_circuit_breaker and not circuit_breaker.can_execute():
+                logger.warning(
+                    f"Circuit breaker OPEN - using cached data for {func.__name__}"
+                )
+                if cache_key:
+                    cached_data = api_cache.get(cache_key)
+                    if cached_data is not None:
+                        return cached_data
+
+                if fallback_data is not None:
+                    logger.info(f"Using fallback data for {func.__name__}")
+                    return fallback_data
+
+                raise TodoistConnectionError(
+                    "Service temporarily unavailable (circuit breaker open) and no cached data available"
+                )
+
+            # Try to get from cache first
+            if cache_key:
+                cached_data = api_cache.get(cache_key)
+                if cached_data is not None:
+                    return cached_data
+
+            # Execute the function
+            try:
+                result = func(*args, **kwargs)
+
+                # Record success and cache result
+                if enable_circuit_breaker:
+                    circuit_breaker.record_success()
+
+                if cache_key and result is not None:
+                    api_cache.set(cache_key, result, cache_ttl)
+
+                return result
+
+            except (TodoistConnectionError, TodoistAPIError) as e:
+                # Record failure
+                if enable_circuit_breaker:
+                    circuit_breaker.record_failure()
+
+                # Try to use cached data with extended TTL
+                if cache_key:
+                    # Check for expired cache that we can still use as fallback
+                    with api_cache.lock:
+                        if cache_key in api_cache.cache:
+                            entry = api_cache.cache[cache_key]
+                            age = time.time() - entry.timestamp
+                            if (
+                                age <= CACHE_OFFLINE_TTL
+                            ):  # Use stale cache for offline scenarios
+                                logger.warning(
+                                    f"Using stale cached data for {func.__name__} (age: {age:.0f}s)"
+                                )
+                                return entry.data
+
+                # Use fallback data if available
+                if fallback_data is not None:
+                    logger.warning(f"Using fallback data for {func.__name__}: {e}")
+                    return fallback_data
+
+                # Re-raise the exception
+                raise
+
+        return wrapper
+
+    return decorator
+
+
+def _generate_cache_key(endpoint: str, user_id: str, **params) -> str:
+    """Generate cache key for API requests."""
+    param_str = json.dumps(sorted(params.items())) if params else ""
+    return f"todoist:{user_id}:{endpoint}:{hash(param_str)}"
+
+
+def _projects_cache_key(user_id: str) -> str:
+    """Cache key for projects."""
+    return f"todoist:{user_id}:projects"
+
+
+def _tasks_cache_key(user_id: str, **params) -> str:
+    """Cache key for tasks with parameters."""
+    return _generate_cache_key("tasks", user_id, **params)
+
+
+def _labels_cache_key(user_id: str) -> str:
+    """Cache key for labels."""
+    return f"todoist:{user_id}:labels"
 
 
 class TodoistAPIError(Exception):
@@ -1465,3 +1806,337 @@ def get_common_recurring_patterns() -> Dict[str, str]:
         Dict[str, str]: Dictionary mapping pattern names to due_string values
     """
     return COMMON_RECURRING_PATTERNS.copy()
+
+
+# ==================== ENHANCED ERROR HANDLING AND FALLBACK FUNCTIONS ====================
+
+
+def check_todoist_health(user_id: str) -> Dict[str, Any]:
+    """
+    Check the health status of Todoist API.
+
+    Args:
+        user_id: User identifier for authentication
+
+    Returns:
+        Dict with health status information
+    """
+    try:
+        is_healthy = health_monitor.check_health(user_id)
+
+        health_info = {
+            "is_healthy": is_healthy,
+            "circuit_breaker_state": circuit_breaker.state.value,
+            "failure_count": circuit_breaker.failure_count,
+            "last_check": health_monitor.last_check,
+            "consecutive_failures": health_monitor.consecutive_failures,
+        }
+
+        logger.info(f"Todoist health check for user {user_id}: {health_info}")
+        return health_info
+
+    except Exception as e:
+        logger.error(f"Error checking Todoist health: {e}")
+        return {
+            "is_healthy": False,
+            "error": str(e),
+            "circuit_breaker_state": circuit_breaker.state.value,
+            "failure_count": circuit_breaker.failure_count,
+        }
+
+
+def clear_cache() -> bool:
+    """
+    Clear the API cache.
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        api_cache.clear()
+        logger.info("Todoist API cache cleared successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return False
+
+
+def get_cache_stats() -> Dict[str, Any]:
+    """
+    Get cache statistics.
+
+    Returns:
+        Dict with cache statistics
+    """
+    try:
+        with api_cache.lock:
+            total_entries = len(api_cache.cache)
+            current_time = time.time()
+
+            expired_count = 0
+            total_age = 0
+
+            for entry in api_cache.cache.values():
+                age = current_time - entry.timestamp
+                total_age += age
+                if age > entry.ttl:
+                    expired_count += 1
+
+            avg_age = total_age / total_entries if total_entries > 0 else 0
+
+            return {
+                "total_entries": total_entries,
+                "expired_entries": expired_count,
+                "active_entries": total_entries - expired_count,
+                "average_age_seconds": round(avg_age, 2),
+                "max_size": api_cache.max_size,
+                "utilization_percent": round(
+                    (total_entries / api_cache.max_size) * 100, 2
+                ),
+            }
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}")
+        return {"error": str(e)}
+
+
+def reset_circuit_breaker() -> bool:
+    """
+    Manually reset the circuit breaker to closed state.
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        with circuit_breaker.lock:
+            circuit_breaker.state = CircuitState.CLOSED
+            circuit_breaker.failure_count = 0
+            circuit_breaker.success_count = 0
+
+        logger.info("Circuit breaker manually reset to CLOSED state")
+        return True
+    except Exception as e:
+        logger.error(f"Error resetting circuit breaker: {e}")
+        return False
+
+
+@with_fallback(
+    cache_key_func=_projects_cache_key, cache_ttl=CACHE_DEFAULT_TTL, fallback_data=[]
+)
+def get_all_projects_with_fallback(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all projects with enhanced error handling and caching.
+
+    Args:
+        user_id: User identifier for authentication
+
+    Returns:
+        List of project dictionaries (may be cached or fallback data)
+    """
+    return get_all_projects(user_id)
+
+
+@with_fallback(
+    cache_key_func=lambda user_id, **kwargs: _tasks_cache_key(user_id, **kwargs),
+    cache_ttl=CACHE_DEFAULT_TTL,
+    fallback_data=[],
+)
+def get_all_tasks_with_fallback(
+    user_id: str,
+    project_id: Optional[str] = None,
+    label: Optional[str] = None,
+    filter_expr: Optional[str] = None,
+    lang: str = "en",
+) -> List[Dict[str, Any]]:
+    """
+    Fetch tasks with enhanced error handling and caching.
+
+    Args:
+        user_id: User identifier for authentication
+        project_id: Optional project ID to filter tasks
+        label: Optional label name to filter tasks
+        filter_expr: Optional Todoist filter expression
+        lang: Language for dates
+
+    Returns:
+        List of task dictionaries (may be cached or fallback data)
+    """
+    return get_all_tasks(user_id, project_id, label, filter_expr, lang)
+
+
+@with_fallback(
+    cache_key_func=_labels_cache_key, cache_ttl=CACHE_DEFAULT_TTL, fallback_data=[]
+)
+def get_all_labels_with_fallback(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all labels with enhanced error handling and caching.
+
+    Args:
+        user_id: User identifier for authentication
+
+    Returns:
+        List of label dictionaries (may be cached or fallback data)
+    """
+    return get_all_labels(user_id)
+
+
+def safe_api_call(
+    func: Callable,
+    *args,
+    fallback_result: Optional[Any] = None,
+    max_retries: int = MAX_RETRIES,
+    **kwargs,
+) -> Any:
+    """
+    Safely execute an API call with configurable retries and fallback.
+
+    Args:
+        func: Function to execute
+        *args: Positional arguments for the function
+        fallback_result: Result to return if all attempts fail
+        max_retries: Maximum number of retry attempts
+        **kwargs: Keyword arguments for the function
+
+    Returns:
+        Function result or fallback_result if all attempts fail
+    """
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except (TodoistConnectionError, TodoistAPIError) as e:
+            last_exception = e
+            if attempt < max_retries:
+                wait_time = 2**attempt  # Exponential backoff
+                logger.warning(
+                    f"API call failed (attempt {attempt + 1}): {e}. Retrying in {wait_time}s..."
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error(f"API call failed after {max_retries + 1} attempts: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error in safe_api_call: {e}")
+            last_exception = e
+            break
+
+    if fallback_result is not None:
+        logger.info(f"Using fallback result for failed API call: {func.__name__}")
+        return fallback_result
+
+    raise last_exception
+
+
+def batch_api_calls(
+    calls: List[Dict[str, Any]],
+    fail_fast: bool = False,
+    delay_between_calls: float = 0.1,
+) -> List[Dict[str, Any]]:
+    """
+    Execute multiple API calls with error handling.
+
+    Args:
+        calls: List of call dictionaries with 'func', 'args', 'kwargs', 'fallback'
+        fail_fast: Stop on first failure if True, continue if False
+        delay_between_calls: Delay in seconds between calls
+
+    Returns:
+        List of results with success/failure status
+    """
+    results = []
+
+    for i, call_info in enumerate(calls):
+        if delay_between_calls > 0 and i > 0:
+            time.sleep(delay_between_calls)
+
+        try:
+            func = call_info["func"]
+            args = call_info.get("args", [])
+            kwargs = call_info.get("kwargs", {})
+            fallback = call_info.get("fallback")
+
+            result = safe_api_call(func, *args, fallback_result=fallback, **kwargs)
+
+            results.append(
+                {
+                    "success": True,
+                    "result": result,
+                    "call_index": i,
+                    "function": func.__name__,
+                }
+            )
+
+        except Exception as e:
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "call_index": i,
+                "function": call_info["func"].__name__,
+            }
+
+            results.append(error_result)
+
+            if fail_fast:
+                logger.error(f"Batch API call failed fast at index {i}: {e}")
+                break
+            else:
+                logger.warning(f"Batch API call failed at index {i}, continuing: {e}")
+
+    success_count = sum(1 for r in results if r["success"])
+    logger.info(f"Batch API calls completed: {success_count}/{len(results)} successful")
+
+    return results
+
+
+def get_todoist_status_summary(user_id: str) -> Dict[str, Any]:
+    """
+    Get comprehensive status summary for Todoist integration.
+
+    Args:
+        user_id: User identifier
+
+    Returns:
+        Dict with comprehensive status information
+    """
+    try:
+        # Health check
+        health_status = check_todoist_health(user_id)
+
+        # Cache statistics
+        cache_stats = get_cache_stats()
+
+        # Circuit breaker status
+        circuit_status = {
+            "state": circuit_breaker.state.value,
+            "failure_count": circuit_breaker.failure_count,
+            "success_count": circuit_breaker.success_count,
+            "failure_threshold": circuit_breaker.failure_threshold,
+            "recovery_timeout": circuit_breaker.recovery_timeout,
+        }
+
+        # Test basic connectivity
+        connection_test = None
+        try:
+            connection_test = test_connection(user_id)
+        except Exception as e:
+            connection_test = {"error": str(e)}
+
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "user_id": user_id,
+            "health_status": health_status,
+            "cache_stats": cache_stats,
+            "circuit_breaker": circuit_status,
+            "connection_test": connection_test,
+            "api_base_url": TODOIST_API_BASE,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting Todoist status summary: {e}")
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "user_id": user_id,
+            "error": str(e),
+            "health_status": {"is_healthy": False},
+            "cache_stats": {"error": "unavailable"},
+            "circuit_breaker": {"state": "unknown"},
+        }
