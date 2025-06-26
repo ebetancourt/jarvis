@@ -77,9 +77,9 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 - [ ] 4.0 Develop Google Calendar Multi-Account Integration
   - [x] 4.1 Create `src/common/oauth_manager.py` for managing both Todoist and multiple Google account tokens (FR-008)
   - [x] 4.2 Implement `src/tools/calendar_tools.py` with multi-account calendar data fetching (FR-007)
-  - [ ] 4.3 Add calendar event analysis for past week accomplishments and upcoming availability
-  - [ ] 4.4 Implement time slot analysis and availability detection for task scheduling (FR-018)
-  - [ ] 4.5 Create calendar conflict detection across multiple accounts
+  - [x] 4.3 Add calendar event analysis for past week accomplishments and upcoming availability
+  - [x] 4.4 Implement time slot analysis and availability detection for task scheduling (FR-018)
+  - [x] 4.5 Create calendar conflict detection across multiple accounts
   - [ ] 4.6 Add timezone handling for user's local timezone
   - [ ] 4.7 Implement OAuth token refresh handling for both Todoist and multiple Google accounts
 

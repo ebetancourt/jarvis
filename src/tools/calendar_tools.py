@@ -953,6 +953,192 @@ class CalendarAnalyzer:
 
         return free_slots
 
+    def detect_calendar_conflicts(
+        self,
+        events: List[CalendarEvent],
+        include_all_day: bool = False,
+        conflict_threshold_minutes: int = 15,
+    ) -> List[Dict[str, Any]]:
+        """Detect conflicts between calendar events across multiple accounts."""
+        conflicts = []
+
+        # Filter out all-day events if requested
+        if not include_all_day:
+            events = [event for event in events if not event.all_day]
+
+        # Sort events by start time for easier processing
+        events.sort(
+            key=lambda e: e.start_time or datetime.min.replace(tzinfo=timezone.utc)
+        )
+
+        # Check each pair of events for conflicts
+        for i in range(len(events)):
+            for j in range(i + 1, len(events)):
+                event1 = events[i]
+                event2 = events[j]
+
+                # Skip if events are from the same calendar (not a multi-account conflict)
+                if (
+                    event1.calendar_id == event2.calendar_id
+                    and event1.account_email == event2.account_email
+                ):
+                    continue
+
+                # Check for time overlap
+                conflict_info = self._check_event_overlap(
+                    event1, event2, conflict_threshold_minutes
+                )
+                if conflict_info:
+                    conflicts.append(conflict_info)
+
+        # Sort conflicts by start time and overlap duration
+        conflicts.sort(key=lambda x: (x["start_time"], -x["overlap_minutes"]))
+
+        return conflicts
+
+    def _check_event_overlap(
+        self, event1: CalendarEvent, event2: CalendarEvent, threshold_minutes: int = 15
+    ) -> Optional[Dict[str, Any]]:
+        """Check if two events overlap and return conflict information."""
+        if (
+            not event1.start_time
+            or not event1.end_time
+            or not event2.start_time
+            or not event2.end_time
+        ):
+            return None
+
+        # Calculate overlap
+        overlap_start = max(event1.start_time, event2.start_time)
+        overlap_end = min(event1.end_time, event2.end_time)
+
+        # Check if there's actually an overlap
+        if overlap_start >= overlap_end:
+            return None
+
+        overlap_duration = (overlap_end - overlap_start).total_seconds() / 60
+
+        # Only report conflicts above the threshold
+        if overlap_duration < threshold_minutes:
+            return None
+
+        # Determine conflict severity
+        event1_duration = event1.duration_minutes or 0
+        event2_duration = event2.duration_minutes or 0
+
+        # Calculate what percentage of each event is in conflict
+        event1_conflict_pct = (
+            (overlap_duration / event1_duration * 100) if event1_duration > 0 else 0
+        )
+        event2_conflict_pct = (
+            (overlap_duration / event2_duration * 100) if event2_duration > 0 else 0
+        )
+
+        # Determine severity based on overlap percentage
+        max_conflict_pct = max(event1_conflict_pct, event2_conflict_pct)
+        if max_conflict_pct >= 80:
+            severity = "critical"
+        elif max_conflict_pct >= 50:
+            severity = "major"
+        elif max_conflict_pct >= 25:
+            severity = "moderate"
+        else:
+            severity = "minor"
+
+        return {
+            "conflict_id": f"{event1.id}_{event2.id}",
+            "severity": severity,
+            "start_time": overlap_start.isoformat(),
+            "end_time": overlap_end.isoformat(),
+            "overlap_minutes": overlap_duration,
+            "event1": {
+                "id": event1.id,
+                "summary": event1.summary,
+                "calendar_name": event1.calendar_name,
+                "account_email": event1.account_email,
+                "start_time": event1.start_time.isoformat(),
+                "end_time": event1.end_time.isoformat(),
+                "conflict_percentage": event1_conflict_pct,
+            },
+            "event2": {
+                "id": event2.id,
+                "summary": event2.summary,
+                "calendar_name": event2.calendar_name,
+                "account_email": event2.account_email,
+                "start_time": event2.start_time.isoformat(),
+                "end_time": event2.end_time.isoformat(),
+                "conflict_percentage": event2_conflict_pct,
+            },
+            "resolution_suggestions": self._get_conflict_resolution_suggestions(
+                event1, event2, overlap_duration
+            ),
+        }
+
+    def _get_conflict_resolution_suggestions(
+        self, event1: CalendarEvent, event2: CalendarEvent, overlap_minutes: float
+    ) -> List[str]:
+        """Generate resolution suggestions for conflicting events."""
+        suggestions = []
+
+        # Basic suggestions based on event characteristics
+        if len(event1.attendees) == 0 and len(event2.attendees) > 0:
+            suggestions.append(
+                f"Consider rescheduling '{event1.summary}' as it has no attendees"
+            )
+        elif len(event2.attendees) == 0 and len(event1.attendees) > 0:
+            suggestions.append(
+                f"Consider rescheduling '{event2.summary}' as it has no attendees"
+            )
+
+        # Duration-based suggestions
+        event1_duration = event1.duration_minutes or 0
+        event2_duration = event2.duration_minutes or 0
+
+        if event1_duration < 30 and event2_duration >= 60:
+            suggestions.append(
+                f"Consider moving the shorter meeting '{event1.summary}' to avoid conflict"
+            )
+        elif event2_duration < 30 and event1_duration >= 60:
+            suggestions.append(
+                f"Consider moving the shorter meeting '{event2.summary}' to avoid conflict"
+            )
+
+        # Calendar-based suggestions
+        if (
+            "personal" in event1.calendar_name.lower()
+            and "work" in event2.calendar_name.lower()
+        ):
+            suggestions.append(
+                f"Consider rescheduling personal event '{event1.summary}' to avoid work conflict"
+            )
+        elif (
+            "personal" in event2.calendar_name.lower()
+            and "work" in event1.calendar_name.lower()
+        ):
+            suggestions.append(
+                f"Consider rescheduling personal event '{event2.summary}' to avoid work conflict"
+            )
+
+        # Overlap-based suggestions
+        if overlap_minutes < 30:
+            suggestions.append(
+                "Consider shortening one of the events or adjusting start/end times"
+            )
+        else:
+            suggestions.append(
+                "Significant overlap detected - one event should be rescheduled"
+            )
+
+        # Account-based suggestions
+        if event1.account_email != event2.account_email:
+            suggestions.append(
+                "Conflict detected across different Google accounts - check visibility and coordination"
+            )
+
+        return suggestions or [
+            "Review both events and reschedule one to resolve the conflict"
+        ]
+
 
 # High-level convenience functions for the weekly review agent
 
@@ -1079,3 +1265,25 @@ def test_calendar_connection() -> Dict[str, Any]:
         result["accounts"].append(account_info)
 
     return result
+
+
+def detect_calendar_conflicts(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    include_all_day: bool = False,
+    conflict_threshold_minutes: int = 15,
+) -> List[Dict[str, Any]]:
+    """Detect calendar conflicts across all connected Google accounts."""
+    if not start_time:
+        start_time = datetime.now()
+    if not end_time:
+        end_time = start_time + timedelta(days=7)  # Next week by default
+
+    events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+
+    analyzer = CalendarAnalyzer()
+    return analyzer.detect_calendar_conflicts(
+        events=events,
+        include_all_day=include_all_day,
+        conflict_threshold_minutes=conflict_threshold_minutes,
+    )
