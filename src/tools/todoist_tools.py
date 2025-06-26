@@ -18,7 +18,8 @@ from threading import Lock
 from dataclasses import dataclass
 from enum import Enum
 
-from service.oauth_service import get_oauth_service, OAuthToken
+from common.oauth_manager import oauth_manager
+from service.oauth_service import OAuthToken
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -399,23 +400,18 @@ def _get_valid_token(user_id: str) -> OAuthToken:
         OAuthToken: Valid OAuth token
 
     Raises:
-        TodoistAuthenticationError: If no valid token is available
+        TodoistAuthenticationError: If no valid token is available or token is expired.
+            Todoist does not support refresh tokens; user must re-authenticate.
     """
-    oauth_service = get_oauth_service()
-    token = oauth_service.get_token("todoist", user_id)
+    token = oauth_manager.get_valid_token("todoist", user_id)
 
     if not token:
         raise TodoistAuthenticationError(
-            f"No Todoist token found for user {user_id}. "
-            "Please complete OAuth authentication first."
+            f"No valid Todoist token found for user {user_id}. "
+            "Your Todoist session has expired or is invalid. "
+            "Todoist does NOT support refresh tokens. "
+            "Please re-authenticate with Todoist via the OAuth flow to continue."
         )
-
-    if not oauth_service._is_token_valid(token):
-        raise TodoistAuthenticationError(
-            f"Todoist token for user {user_id} has expired. "
-            "Please re-authenticate with Todoist."
-        )
-
     return token
 
 

@@ -178,15 +178,36 @@ def show_oauth_configuration(user_id: str):
     google_accounts = oauth_status.get("google_accounts", [])
 
     if google_accounts:
-        st.success(f"✅ {len(google_accounts)} Google account(s) connected")
-        for account in google_accounts:
-            st.caption(f"📧 {account.get('email', 'Unknown email')}")
+        for i, account in enumerate(google_accounts):
+            with st.container(border=True):
+                cols = st.columns([0.8, 0.2])
+                with cols[0]:
+                    st.markdown(f"**📧 {account.get('email', 'Unknown email')}**")
+                with cols[1]:
+                    help_str = f"Disconnect {account.get('email', 'this account')}"
+                    if st.button(
+                        "Disconnect",
+                        key=f"disconnect_google_{account.get('user_id', i)}",
+                        help=help_str,
+                    ):
+                        if call_oauth_disconnect_api(
+                            "google", account.get("user_id", "")
+                        ):
+                            st.success(
+                                f"Disconnected {account.get('email', 'Google account')} successfully!"
+                            )
+                            st.rerun()
+        st.markdown("")
     else:
         st.warning("⚠️ Not connected to Google Calendar")
-        if st.button("🔗 Connect Google Account", key="connect_google"):
-            result = call_oauth_start_api("google", user_id)
-            if result and "authorization_url" in result:
-                st.markdown(f"[Click here to authorize Google Calendar]({result['authorization_url']})")
+
+    # Always show the connect button below the list
+    if st.button("🔗 Connect a Google Account", key="connect_google"):
+        result = call_oauth_start_api("google", user_id)
+        if result and "authorization_url" in result:
+            st.markdown(
+                f"[Click here to authorize Google Calendar]({result['authorization_url']})"
+            )
 
     # Close button
     if st.button("Close", key="close_oauth", type="primary"):
