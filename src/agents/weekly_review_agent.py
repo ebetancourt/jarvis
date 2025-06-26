@@ -5,6 +5,8 @@ from langgraph.prebuilt import create_react_agent
 from src.tools.todoist_tools import get_completed_tasks, get_all_tasks, get_all_labels
 from src.tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
+    get_all_calendar_events,
+    detect_calendar_conflicts,
 )
 from src.tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
 
@@ -911,6 +913,121 @@ def detect_recurring_themes_and_stressors(
     return output
 
 
+@tool
+def resolve_priority_conflicts(user_id: str, weeks_ahead: int = 1) -> str:
+    """
+    Identify conflicts between high-priority tasks and calendar events for the upcoming week, and suggest possible resolutions.
+
+    Args:
+        user_id: User identifier for authentication
+        weeks_ahead: Number of weeks to look ahead (default: 1)
+
+    Returns:
+        str: Markdown summary of conflicts and suggested resolutions
+    """
+    from datetime import datetime, timedelta
+
+    try:
+        # Get high-priority tasks (reuse logic from identify_upcoming_priorities)
+        tasks = get_all_tasks(user_id)
+        labels = get_all_labels(user_id)
+        label_id_to_name = {label["id"]: label["name"].lower() for label in labels}
+        now = datetime.now()
+        week_later = now + timedelta(days=7 * weeks_ahead)
+        high_priority = []
+        for task in tasks:
+            if task.get("priority", 1) == 4:
+                high_priority.append(task)
+            due = task.get("due")
+            due_date = None
+            if due and isinstance(due, dict):
+                due_str = due.get("date")
+                if due_str:
+                    try:
+                        due_date = datetime.fromisoformat(due_str)
+                    except Exception:
+                        pass
+            if due_date and now <= due_date <= week_later:
+                high_priority.append(task)
+            for label_id in task.get("labels", []):
+                label_name = label_id_to_name.get(label_id, "")
+                if "urgent" in label_name or "important" in label_name:
+                    high_priority.append(task)
+                    break
+        # Deduplicate
+        seen = set()
+        unique_tasks = []
+        for t in high_priority:
+            tid = t["id"]
+            if tid not in seen:
+                unique_tasks.append(t)
+                seen.add(tid)
+        high_priority = unique_tasks
+        # Get calendar events for next week
+        start_time = now
+        end_time = week_later
+        events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+        # Detect event-event conflicts
+        event_conflicts = detect_calendar_conflicts(
+            start_time=start_time, end_time=end_time
+        )
+        # Detect task-event conflicts (simple: task due time overlaps with event)
+        task_event_conflicts = []
+        for task in high_priority:
+            due = task.get("due")
+            if due and isinstance(due, dict):
+                due_str = due.get("date")
+                if due_str:
+                    try:
+                        due_dt = datetime.fromisoformat(due_str)
+                    except Exception:
+                        continue
+                    for event in events:
+                        if hasattr(event, "start_time") and hasattr(event, "end_time"):
+                            if event.start_time <= due_dt <= event.end_time:
+                                task_event_conflicts.append(
+                                    {"task": task, "event": event}
+                                )
+        # Format output
+        output = "## ⚠️ Priority Conflicts & Suggestions\n\n"
+        if event_conflicts:
+            output += "### 📅 Calendar Event Conflicts\n"
+            for conflict in event_conflicts:
+                e1 = conflict["event1"]
+                e2 = conflict["event2"]
+                output += (
+                    f"- Conflict between '{e1['summary']}' and '{e2['summary']}' "
+                    f"from {conflict['start_time']} to {conflict['end_time']}\n"
+                )
+                if "resolution_suggestions" in conflict:
+                    for suggestion in conflict["resolution_suggestions"]:
+                        output += f"    - Suggestion: {suggestion}\n"
+        if task_event_conflicts:
+            output += "\n### 📝 Task vs. Event Conflicts\n"
+            for pair in task_event_conflicts:
+                task = pair["task"]
+                event = pair["event"]
+                output += (
+                    f"- Task '{task.get('content')}' (Due: {task.get('due', {}).get('date', '')}) "
+                    f"overlaps with event '{getattr(event, 'summary', 'Untitled Event')}' "
+                    f"({getattr(event, 'start_time', '')} to {getattr(event, 'end_time', '')})\n"
+                )
+                # Suggestions
+                output += (
+                    "    - Suggestion: Consider rescheduling the task or event, "
+                    "delegating, or adjusting priorities.\n"
+                )
+        if not (event_conflicts or task_event_conflicts):
+            output += "No conflicts detected between high-priority tasks and calendar events for the upcoming week.\n"
+        output += (
+            "\n*Note: This is a first-pass implementation. "
+            "Future improvements: deeper context, user feedback, and project/task time blocks.\n"
+        )
+        return output
+    except Exception as e:
+        return f"❌ Error during conflict resolution: {e}"
+
+
 # Configure tools for the weekly review agent including session management
 tools = [
     # Session management and context tools
@@ -930,6 +1047,7 @@ tools = [
     adapt_review_for_sparse_data,
     review_areas_of_responsibility_and_projects,
     detect_recurring_themes_and_stressors,
+    resolve_priority_conflicts,
 ]
 
 current_date = datetime.now().strftime("%Y-%m-%d")
