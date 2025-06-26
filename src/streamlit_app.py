@@ -189,7 +189,7 @@ def show_oauth_configuration(user_id: str):
                 with cols[1]:
                     help_str = f"Disconnect {account.get('email', 'this account')}"
                     if st.button(
-                        "Disconnect",
+                        "❌",
                         key=f"disconnect_google_{account.get('user_id', i)}",
                         help=help_str,
                     ):
