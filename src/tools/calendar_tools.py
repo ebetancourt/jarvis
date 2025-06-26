@@ -12,20 +12,201 @@ Functional Requirements Addressed:
 """
 
 import logging
+import os
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any, Tuple, Union
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from urllib.parse import urlencode
+
+# Timezone handling
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    # Fallback for Python < 3.9
+    try:
+        from backports.zoneinfo import ZoneInfo
+    except ImportError:
+        # If zoneinfo is not available, create a simple fallback
+        class ZoneInfo:
+            def __init__(self, name: str):
+                self.name = name
+                # This is a very basic fallback - in production you'd want proper pytz
+                if name == "UTC":
+                    self.tzinfo = timezone.utc
+                else:
+                    # Rough approximation for common timezones
+                    offset_map = {
+                        "America/New_York": -5,
+                        "America/Chicago": -6,
+                        "America/Denver": -7,
+                        "America/Los_Angeles": -8,
+                        "Europe/London": 0,
+                        "Europe/Paris": 1,
+                        "Asia/Tokyo": 9,
+                    }
+                    offset = offset_map.get(name, 0)
+                    self.tzinfo = timezone(timedelta(hours=offset))
+
+            def __call__(self):
+                return self.tzinfo
+
 
 from common.oauth_manager import oauth_manager, OAuthToken
 
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+class TimezoneHandler:
+    """Handles timezone detection and conversion for calendar events."""
+
+    def __init__(self, user_timezone: Optional[str] = None):
+        """Initialize with user's timezone. Auto-detect if not provided."""
+        self.user_timezone = self._get_user_timezone(user_timezone)
+        logger.info(f"Using timezone: {self.user_timezone}")
+
+    def _get_user_timezone(self, provided_timezone: Optional[str] = None) -> str:
+        """Get user's timezone with fallback detection."""
+        if provided_timezone:
+            return provided_timezone
+
+        # Try environment variable first
+        env_tz = os.environ.get("TZ")
+        if env_tz:
+            return env_tz
+
+        # Try to detect system timezone
+        try:
+            import time
+
+            # Get system timezone name
+            if hasattr(time, "tzname") and time.tzname[0]:
+                # This gives us something like ('PST', 'PDT')
+                # Convert common abbreviations to IANA names
+                tz_map = {
+                    "PST": "America/Los_Angeles",
+                    "PDT": "America/Los_Angeles",
+                    "EST": "America/New_York",
+                    "EDT": "America/New_York",
+                    "CST": "America/Chicago",
+                    "CDT": "America/Chicago",
+                    "MST": "America/Denver",
+                    "MDT": "America/Denver",
+                    "GMT": "UTC",
+                    "UTC": "UTC",
+                }
+                tz_abbr = time.tzname[1] if time.daylight else time.tzname[0]
+                if tz_abbr in tz_map:
+                    return tz_map[tz_abbr]
+        except Exception as e:
+            logger.warning(f"Could not detect system timezone: {e}")
+
+        # Fallback to UTC
+        logger.warning("Using UTC as fallback timezone")
+        return "UTC"
+
+    def get_timezone(self) -> ZoneInfo:
+        """Get ZoneInfo object for user's timezone."""
+        try:
+            if isinstance(ZoneInfo, type):
+                return ZoneInfo(self.user_timezone)
+            else:
+                # Fallback ZoneInfo
+                return ZoneInfo(self.user_timezone)()
+        except Exception as e:
+            logger.error(f"Error creating timezone {self.user_timezone}: {e}")
+            return ZoneInfo("UTC")()
+
+    def to_user_timezone(self, dt: datetime) -> datetime:
+        """Convert datetime to user's timezone."""
+        if dt is None:
+            return None
+
+        # Ensure the datetime is timezone-aware
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        # Convert to user's timezone
+        user_tz = self.get_timezone()
+        return dt.astimezone(user_tz)
+
+    def to_utc(self, dt: datetime) -> datetime:
+        """Convert datetime from user's timezone to UTC."""
+        if dt is None:
+            return None
+
+        # If naive, assume it's in user's timezone
+        if dt.tzinfo is None:
+            user_tz = self.get_timezone()
+            dt = dt.replace(tzinfo=user_tz)
+
+        return dt.astimezone(timezone.utc)
+
+    def now_in_user_timezone(self) -> datetime:
+        """Get current time in user's timezone."""
+        user_tz = self.get_timezone()
+        return datetime.now(user_tz)
+
+    def today_in_user_timezone(self) -> datetime:
+        """Get start of today in user's timezone."""
+        now = self.now_in_user_timezone()
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def is_working_hours(
+        self, dt: datetime, start_hour: int = 9, end_hour: int = 17
+    ) -> bool:
+        """Check if datetime is within working hours in user's timezone."""
+        if dt is None:
+            return False
+
+        local_dt = self.to_user_timezone(dt)
+        hour = local_dt.hour
+        # Check if it's a weekday and within working hours
+        is_weekday = local_dt.weekday() < 5  # 0-6, Mon-Sun
+        is_business_hours = start_hour <= hour < end_hour
+        return is_weekday and is_business_hours
+
+    def is_weekend(self, dt: datetime) -> bool:
+        """Check if datetime is on weekend in user's timezone."""
+        if dt is None:
+            return False
+
+        local_dt = self.to_user_timezone(dt)
+        return local_dt.weekday() >= 5  # Saturday = 5, Sunday = 6
+
+    def get_day_category(self, dt: datetime) -> str:
+        """Categorize time of day in user's timezone."""
+        if dt is None:
+            return "unknown"
+
+        local_dt = self.to_user_timezone(dt)
+        hour = local_dt.hour
+
+        if 5 <= hour < 12:
+            return "morning"
+        elif 12 <= hour < 17:
+            return "afternoon"
+        elif 17 <= hour < 21:
+            return "evening"
+        else:
+            return "night"
+
+
+# Global timezone handler instance
+_timezone_handler = None
+
+
+def get_timezone_handler(user_timezone: Optional[str] = None) -> TimezoneHandler:
+    """Get or create timezone handler instance."""
+    global _timezone_handler
+    if _timezone_handler is None or user_timezone:
+        _timezone_handler = TimezoneHandler(user_timezone)
+    return _timezone_handler
 
 
 @dataclass
@@ -72,29 +253,125 @@ class CalendarEvent:
 
     @property
     def is_past(self) -> bool:
-        """Check if event is in the past."""
+        """Check if event is in the past (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
         if self.all_day:
-            # For all-day events, compare dates
-            return self.start_time.date() < datetime.now().date()
-        return self.end_time < datetime.now()
+            # For all-day events, compare dates in user's timezone
+            local_start = tz_handler.to_user_timezone(self.start_time)
+            today = tz_handler.today_in_user_timezone()
+            return local_start.date() < today.date()
+
+        # For timed events, use end time if available, otherwise start time
+        compare_time = self.end_time if self.end_time else self.start_time
+        now = tz_handler.now_in_user_timezone()
+        return tz_handler.to_user_timezone(compare_time) < now
 
     @property
     def is_upcoming(self) -> bool:
-        """Check if event is upcoming."""
-        return self.start_time > datetime.now()
+        """Check if event is upcoming (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        now = tz_handler.now_in_user_timezone()
+        local_start = tz_handler.to_user_timezone(self.start_time)
+        return local_start > now
 
     @property
     def is_today(self) -> bool:
-        """Check if event is today."""
-        return self.start_time.date() == datetime.now().date()
+        """Check if event is today (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        local_start = tz_handler.to_user_timezone(self.start_time)
+        today = tz_handler.today_in_user_timezone()
+        return local_start.date() == today.date()
 
     @property
     def is_this_week(self) -> bool:
-        """Check if event is this week."""
-        today = datetime.now().date()
+        """Check if event is this week (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        local_start = tz_handler.to_user_timezone(self.start_time)
+        today = tz_handler.today_in_user_timezone()
+
+        # Get start of week (Monday)
         start_of_week = today - timedelta(days=today.weekday())
         end_of_week = start_of_week + timedelta(days=6)
-        return start_of_week <= self.start_time.date() <= end_of_week
+
+        event_date = local_start.date()
+        return start_of_week.date() <= event_date <= end_of_week.date()
+
+    @property
+    def is_working_hours(self) -> bool:
+        """Check if event is during working hours (timezone-aware)."""
+        if not self.start_time or self.all_day:
+            return False
+
+        tz_handler = get_timezone_handler()
+        return tz_handler.is_working_hours(self.start_time)
+
+    @property
+    def is_weekend(self) -> bool:
+        """Check if event is on weekend (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        return tz_handler.is_weekend(self.start_time)
+
+    @property
+    def day_category(self) -> str:
+        """Get time of day category (morning/afternoon/evening/night)."""
+        if not self.start_time or self.all_day:
+            return "all_day" if self.all_day else "unknown"
+
+        tz_handler = get_timezone_handler()
+        return tz_handler.get_day_category(self.start_time)
+
+    def to_user_timezone(self) -> "CalendarEvent":
+        """Return a copy of the event with times converted to user's timezone."""
+        tz_handler = get_timezone_handler()
+
+        # Create a copy of the event
+        event_copy = CalendarEvent(
+            id=self.id,
+            summary=self.summary,
+            description=self.description,
+            start_time=(
+                tz_handler.to_user_timezone(self.start_time)
+                if self.start_time
+                else None
+            ),
+            end_time=(
+                tz_handler.to_user_timezone(self.end_time) if self.end_time else None
+            ),
+            all_day=self.all_day,
+            calendar_id=self.calendar_id,
+            calendar_name=self.calendar_name,
+            account_email=self.account_email,
+            location=self.location,
+            attendees=self.attendees.copy() if self.attendees else [],
+            created=tz_handler.to_user_timezone(self.created) if self.created else None,
+            updated=tz_handler.to_user_timezone(self.updated) if self.updated else None,
+            status=self.status,
+            transparency=self.transparency,
+            visibility=self.visibility,
+            recurring=self.recurring,
+            recurring_event_id=self.recurring_event_id,
+            organizer=self.organizer,
+            creator=self.creator,
+            etag=self.etag,
+            html_link=self.html_link,
+        )
+
+        return event_copy
 
 
 @dataclass
@@ -1287,3 +1564,194 @@ def detect_calendar_conflicts(
         include_all_day=include_all_day,
         conflict_threshold_minutes=conflict_threshold_minutes,
     )
+
+
+# Timezone-aware convenience functions
+
+
+def set_user_timezone(timezone_name: str) -> bool:
+    """Set the user's timezone for all calendar operations.
+
+    Args:
+        timezone_name: IANA timezone name (e.g., 'America/New_York', 'Europe/London')
+
+    Returns:
+        True if timezone was set successfully, False otherwise
+    """
+    try:
+        # Test that the timezone is valid
+        test_tz = ZoneInfo(timezone_name)
+        if hasattr(test_tz, "__call__"):
+            test_tz = test_tz()
+
+        # Create new timezone handler with the specified timezone
+        global _timezone_handler
+        _timezone_handler = TimezoneHandler(timezone_name)
+
+        logger.info(f"User timezone set to: {timezone_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to set timezone {timezone_name}: {e}")
+        return False
+
+
+def get_user_timezone() -> str:
+    """Get the current user timezone setting."""
+    tz_handler = get_timezone_handler()
+    return tz_handler.user_timezone
+
+
+def get_timezone_aware_events(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    convert_to_user_timezone: bool = True,
+    max_results_per_calendar: Optional[int] = None,
+) -> List[CalendarEvent]:
+    """Get calendar events with proper timezone handling.
+
+    Args:
+        start_time: Start time for event search (if naive, assumes user timezone)
+        end_time: End time for event search (if naive, assumes user timezone)
+        convert_to_user_timezone: Whether to convert all event times to user timezone
+        max_results_per_calendar: Maximum results per calendar
+
+    Returns:
+        List of CalendarEvent objects, optionally converted to user timezone
+    """
+    tz_handler = get_timezone_handler()
+
+    # Convert search times to UTC for API calls
+    if start_time and start_time.tzinfo is None:
+        start_time = tz_handler.to_utc(start_time)
+    if end_time and end_time.tzinfo is None:
+        end_time = tz_handler.to_utc(end_time)
+
+    # Get events
+    events = get_all_calendar_events(
+        start_time=start_time,
+        end_time=end_time,
+        max_results_per_calendar=max_results_per_calendar,
+    )
+
+    # Convert to user timezone if requested
+    if convert_to_user_timezone:
+        events = [event.to_user_timezone() for event in events]
+
+    return events
+
+
+def get_current_week_events(
+    convert_to_user_timezone: bool = True,
+) -> List[CalendarEvent]:
+    """Get all events for the current week in user's timezone.
+
+    Args:
+        convert_to_user_timezone: Whether to convert event times to user timezone
+
+    Returns:
+        List of CalendarEvent objects for the current week
+    """
+    tz_handler = get_timezone_handler()
+
+    # Get start and end of current week in user's timezone
+    today = tz_handler.today_in_user_timezone()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59)
+
+    return get_timezone_aware_events(
+        start_time=start_of_week,
+        end_time=end_of_week,
+        convert_to_user_timezone=convert_to_user_timezone,
+    )
+
+
+def get_next_week_events(convert_to_user_timezone: bool = True) -> List[CalendarEvent]:
+    """Get all events for next week in user's timezone.
+
+    Args:
+        convert_to_user_timezone: Whether to convert event times to user timezone
+
+    Returns:
+        List of CalendarEvent objects for next week
+    """
+    tz_handler = get_timezone_handler()
+
+    # Get start and end of next week in user's timezone
+    today = tz_handler.today_in_user_timezone()
+    days_until_next_monday = 7 - today.weekday()
+    next_monday = today + timedelta(days=days_until_next_monday)
+    next_monday = next_monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    end_of_next_week = next_monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
+
+    return get_timezone_aware_events(
+        start_time=next_monday,
+        end_time=end_of_next_week,
+        convert_to_user_timezone=convert_to_user_timezone,
+    )
+
+
+def analyze_availability_timezone_aware(
+    days_ahead: int = 7,
+    working_hours_start: int = 9,
+    working_hours_end: int = 17,
+    include_weekends: bool = False,
+) -> Dict[str, Any]:
+    """Analyze availability with timezone-aware calculations.
+
+    All time calculations are done in the user's local timezone.
+    """
+    tz_handler = get_timezone_handler()
+
+    # Use timezone-aware start and end times
+    start_time = tz_handler.now_in_user_timezone()
+    end_time = start_time + timedelta(days=days_ahead)
+
+    # Get timezone-aware events
+    events = get_timezone_aware_events(
+        start_time=start_time, end_time=end_time, convert_to_user_timezone=True
+    )
+
+    analyzer = CalendarAnalyzer()
+    return analyzer.analyze_availability(
+        events,
+        start_time,
+        end_time,
+        working_hours_start,
+        working_hours_end,
+        include_weekends,
+    )
+
+
+def get_timezone_info() -> Dict[str, Any]:
+    """Get current timezone configuration and status.
+
+    Returns:
+        Dictionary containing timezone information and status
+    """
+    tz_handler = get_timezone_handler()
+
+    try:
+        current_time_utc = datetime.now(timezone.utc)
+        current_time_local = tz_handler.now_in_user_timezone()
+
+        # Calculate offset from UTC
+        offset = current_time_local.utcoffset()
+        offset_hours = offset.total_seconds() / 3600 if offset else 0
+
+        return {
+            "user_timezone": tz_handler.user_timezone,
+            "current_time_utc": current_time_utc.isoformat(),
+            "current_time_local": current_time_local.isoformat(),
+            "utc_offset_hours": offset_hours,
+            "timezone_detected": True,
+            "is_dst": current_time_local.dst() is not None
+            and current_time_local.dst().total_seconds() > 0,
+        }
+    except Exception as e:
+        logger.error(f"Error getting timezone info: {e}")
+        return {
+            "user_timezone": tz_handler.user_timezone,
+            "error": str(e),
+            "timezone_detected": False,
+        }
