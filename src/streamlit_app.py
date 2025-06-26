@@ -166,7 +166,10 @@ def show_oauth_configuration(user_id: str):
             if st.button("🔗 Connect Todoist Account", key="connect_todoist"):
                 result = call_oauth_start_api("todoist", user_id)
                 if result and "authorization_url" in result:
-                    st.markdown(f"[Click here to authorize Todoist]({result['authorization_url']})")
+                    st.markdown(
+                        f'<a href="{result["authorization_url"]}" target="_self">Click here to authorize Todoist</a>',
+                        unsafe_allow_html=True,
+                    )
         with col2:
             if st.button("📊 Show Todoist Details", key="show_todoist"):
                 st.info("Todoist details would be shown here")
@@ -206,7 +209,8 @@ def show_oauth_configuration(user_id: str):
         result = call_oauth_start_api("google", user_id)
         if result and "authorization_url" in result:
             st.markdown(
-                f"[Click here to authorize Google Calendar]({result['authorization_url']})"
+                f'<a href="{result["authorization_url"]}" target="_self">Click here to authorize Google Calendar</a>',
+                unsafe_allow_html=True,
             )
 
     # Close button
