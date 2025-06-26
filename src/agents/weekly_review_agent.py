@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
-from src.tools.todoist_tools import get_completed_tasks
+from src.tools.todoist_tools import get_completed_tasks, get_all_tasks
 from src.tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
 )
@@ -251,19 +251,72 @@ def get_past_week_accomplishments(
         )
 
 
-@tool
-def analyze_incomplete_tasks() -> str:
+def _get_previous_weekly_reviews_mock(user_id: str, num_reviews: int = 3):
     """
-    Identify tasks that are incomplete or stalled from previous reviews.
+    Placeholder for fetching previous weekly reviews from storage.
+    TODO: Replace with real storage integration when available.
+    """
+    # Example mock data structure
+    return [
+        {
+            "week": "2024-06-07",
+            "incomplete_tasks": [
+                {"id": "123", "content": "Finish project report", "project_id": "A"},
+                {"id": "124", "content": "Email client", "project_id": "B"},
+            ],
+        },
+        {
+            "week": "2024-05-31",
+            "incomplete_tasks": [
+                {"id": "123", "content": "Finish project report", "project_id": "A"},
+                {"id": "125", "content": "Book dentist appointment", "project_id": "C"},
+            ],
+        },
+    ]
+
+
+@tool
+def analyze_incomplete_tasks(user_id: str) -> str:
+    """
+    Identify tasks that are incomplete or stalled from previous reviews by comparing current incomplete tasks to those from previous weeks.
+
+    Args:
+        user_id: User identifier for authentication
 
     Returns:
         str: Analysis of incomplete and stalled tasks
     """
-    # Placeholder implementation
-    return (
-        "📋 Incomplete tasks analysis placeholder. "
-        "This will analyze Todoist task status and patterns."
-    )
+    # Fetch all current incomplete tasks
+    try:
+        current_tasks = get_all_tasks(user_id)
+    except Exception as e:
+        return f"❌ Error fetching current tasks: {e}"
+    current_task_ids = {task["id"] for task in current_tasks}
+    # Fetch previous weekly reviews (placeholder)
+    previous_reviews = _get_previous_weekly_reviews_mock(user_id)
+    # Collect tasks that have appeared as incomplete in previous reviews and are still incomplete
+    stalled_tasks = []
+    for review in previous_reviews:
+        for task in review.get("incomplete_tasks", []):
+            if task["id"] in current_task_ids:
+                stalled_tasks.append(task)
+    # Remove duplicates
+    seen = set()
+    unique_stalled_tasks = []
+    for task in stalled_tasks:
+        if task["id"] not in seen:
+            unique_stalled_tasks.append(task)
+            seen.add(task["id"])
+    # Format output
+    output = "## ⏸️ Stalled/Uncompleted Tasks\n\n"
+    if unique_stalled_tasks:
+        for task in unique_stalled_tasks:
+            output += f"- {task['content']} (Project: {task.get('project_id', '')})\n"
+        output += "\nThese tasks have remained incomplete across multiple reviews. Consider prioritizing or re-evaluating them.\n"
+    else:
+        output += "No stalled or repeatedly uncompleted tasks detected from previous reviews.\n"
+    output += "\n*Note: Previous review data is currently a placeholder. This will use real storage integration in the future.*\n"
+    return output
 
 
 @tool
@@ -568,8 +621,10 @@ def adapt_review_for_sparse_data(
     for step in adaptation["process"]:
         output += f"• {step}\n"
 
-    output += "\nThis approach focuses on what you can control and influence, "
-    output += "using reflection and planning to create value even with limited historical data."
+    output += (
+        "\nThis approach focuses on what you can control and influence, "
+        "using reflection and planning to create value even with limited historical data."
+    )
 
     return output
 
