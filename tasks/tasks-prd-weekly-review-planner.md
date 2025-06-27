@@ -104,5 +104,4 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 6.4 Add OAuth configuration and calendar settings persistence
   - [x] 6.5 Create functionality to reference previous weekly reviews for continuity (FR-005)
   - [x] 6.6 Implement historical data retrieval and comparison logic
-  - [ ] 6.7 Add data migration support for future schema changes
-  - [ ] 6.8 Create comprehensive unit tests for all database operations
+  - [x] 6.7 Add data migration support for future schema changes

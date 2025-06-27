@@ -185,3 +185,23 @@ def compare_weekly_reviews(
     if review_a.metadata != review_b.metadata:
         diffs["metadata"] = {"a": review_a.metadata, "b": review_b.metadata}
     return diffs
+
+
+async def migrate_weekly_reviews_json_to_db(json_path: str = None) -> int:
+    """
+    Migrate weekly review data from JSON file to the current database backend.
+    Returns the number of sessions migrated. Only runs if backend is not JSON.
+    """
+    if _backend == "json":
+        return 0
+    path = json_path or JSON_PATH
+    if not os.path.exists(path):
+        return 0
+    with open(path, "r") as f:
+        data = json.load(f)
+    count = 0
+    for session_id, session_data in data.items():
+        session = WeeklyReviewSession.model_validate(session_data)
+        await save_weekly_review(session)
+        count += 1
+    return count
