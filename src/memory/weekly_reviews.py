@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from schema.weekly_review_models import WeeklyReviewSession
 from core.settings import settings, DatabaseType
@@ -150,3 +150,38 @@ async def get_previous_weekly_review(
         if review.week_start < week_start:
             return review
     return None
+
+
+async def get_weekly_review_history(user_id: str) -> List[WeeklyReviewSession]:
+    """
+    Retrieve all WeeklyReviewSessions for a user, sorted by week_start ascending
+    (chronological).
+    """
+    reviews = await list_weekly_reviews(user_id)
+    return sorted(reviews, key=lambda s: s.week_start)
+
+
+def compare_weekly_reviews(
+    review_a: WeeklyReviewSession, review_b: WeeklyReviewSession
+) -> Dict[str, Any]:
+    """
+    Compare two WeeklyReviewSessions and return a dict of differences.
+    Returns a dict with keys for changed fields and their values in both reviews.
+    """
+    diffs = {}
+    # Compare summary
+    if review_a.summary != review_b.summary:
+        diffs["summary"] = {"a": review_a.summary, "b": review_b.summary}
+    # Compare entries by type and content
+    entries_a = {(e.type, e.content) for e in review_a.entries}
+    entries_b = {(e.type, e.content) for e in review_b.entries}
+    added = entries_b - entries_a
+    removed = entries_a - entries_b
+    if added:
+        diffs["added_entries"] = list(added)
+    if removed:
+        diffs["removed_entries"] = list(removed)
+    # Compare metadata
+    if review_a.metadata != review_b.metadata:
+        diffs["metadata"] = {"a": review_a.metadata, "b": review_b.metadata}
+    return diffs
