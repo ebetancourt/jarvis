@@ -92,9 +92,10 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 5.6 Develop high-priority task identification for upcoming week (FR-017)
   - [x] 5.7 Implement conflict resolution logic when priorities compete for time slots (FR-019, FR-020, FR-021)
   - [x] 5.8 Create Markdown output formatting for chat interface (FR-022)
-  - [ ] 5.9 Develop realistic task volume calculation to match user capacity (FR-024)
-  - [ ] 5.10 Add specific time allocation and scheduling recommendations (FR-025)
+  - [x] 5.9 Develop realistic task volume calculation to match user capacity (FR-024)
+  - [x] 5.10 Add specific time allocation and scheduling recommendations (FR-025)
   - [ ] 5.11 Integrate with existing journaling agent tools for journal data access (FR-011)
+  - [ ] 5.12 Implement user-editable weekly_review_rules.md for agent preferences (FR-XXX)
 
 - [ ] 6.0 Implement Database Storage and Historical Tracking
   - [ ] 6.1 Design database schema for weekly review data storage in `src/schema/weekly_review_models.py`

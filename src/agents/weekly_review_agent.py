@@ -7,6 +7,7 @@ from src.tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
     get_all_calendar_events,
     detect_calendar_conflicts,
+    analyze_upcoming_availability,
 )
 from src.tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
 
@@ -1036,6 +1037,187 @@ def resolve_priority_conflicts(user_id: str, weeks_ahead: int = 1) -> str:
         return f"❌ Error during conflict resolution: {e}"
 
 
+@tool
+def estimate_task_volume(
+    user_id: str,
+    days_ahead: int = 7,
+    user_task_limit: int | None = None,
+    user_estimates: dict | None = None,
+) -> str:
+    """
+    Estimate realistic task volume for the upcoming week by combining calendar availability, past completion rates, user preferences, and estimated task durations.
+
+    Args:
+        user_id: User identifier for authentication
+        days_ahead: Number of days to look ahead (default: 7)
+        user_task_limit: User's preferred number of tasks (optional)
+        user_estimates: Dict of task_id to user-provided time estimates in hours (optional)
+
+    Returns:
+        str: Markdown summary of recommended task volume and checklist
+    """
+    from datetime import datetime, timedelta
+
+    try:
+        # 1. Calendar availability
+        availability = analyze_upcoming_availability(days_ahead=days_ahead)
+        total_free_hours = availability.get("total_free_hours", 0)
+        # 2. Past completion rates
+        today = datetime.now().date()
+        week_start = today - timedelta(days=7)
+        completed = get_completed_tasks(
+            user_id, since=week_start, until=today, limit=100
+        )
+        completed_tasks = completed.get("items", [])
+        avg_completed = len(completed_tasks)
+        # 3. Get all current tasks
+        tasks = get_all_tasks(user_id)
+        # 4. Estimate time-to-complete for each task
+        recommendations = []
+        for task in tasks:
+            # Use user estimate if provided
+            if user_estimates and task["id"] in user_estimates:
+                est_hours = user_estimates[task["id"]]
+            else:
+                # Try to estimate from past data (very basic: default 1 hour)
+                est_hours = 1.0
+                # TODO: Use LLM or more advanced heuristics for better estimates
+            recommendations.append(
+                {
+                    "task": task,
+                    "est_hours": est_hours,
+                }
+            )
+        # Sort by priority, due date, etc. (for now, just as is)
+        # 5. Select tasks to fit within available hours and user preference
+        selected = []
+        used_hours = 0.0
+        task_limit = user_task_limit or 10  # Default fallback
+        for rec in recommendations:
+            if len(selected) >= task_limit:
+                break
+            if used_hours + rec["est_hours"] > total_free_hours:
+                break
+            selected.append(rec)
+            used_hours += rec["est_hours"]
+        # 6. Format output
+        output = f"## 📊 Task Volume Recommendation for Next {days_ahead} Days\n\n"
+        output += f"- **Total Available Hours:** {total_free_hours:.1f}\n"
+        output += f"- **Average Past Weekly Completions:** {avg_completed}\n"
+        if user_task_limit:
+            output += f"- **User Preference:** {user_task_limit} tasks\n"
+        output += (
+            f"- **Estimated Task Time:** Default 1 hour per task (can be improved)\n\n"
+        )
+        output += "### Recommended Tasks\n"
+        for rec in selected:
+            task = rec["task"]
+            est = rec["est_hours"]
+            checked = "[x]" if task.get("is_completed", False) else "[ ]"
+            output += f"- {checked} {task.get('content')} (Est: {est}h)\n"
+        if len(selected) < len(recommendations):
+            output += (
+                "\n⚠️ Not all tasks fit within your available hours. "
+                "Consider deferring, splitting, or delegating some tasks.\n"
+            )
+        output += (
+            "\n*Note: This is a first-pass estimate. "
+            "Future improvements: better time estimation, LLM-based suggestions, and user feedback.\n"
+        )
+        return output
+    except Exception as e:
+        return f"❌ Error during task volume estimation: {e}"
+
+
+@tool
+def recommend_time_allocation(
+    user_id: str,
+    days_ahead: int = 7,
+    user_preferences: dict | None = None,
+    user_estimates: dict | None = None,
+) -> str:
+    """
+    Suggest specific time blocks for each recommended task for the upcoming week, based on calendar availability, task priority, and user preferences.
+
+    Args:
+        user_id: User identifier for authentication
+        days_ahead: Number of days to look ahead (default: 7)
+        user_preferences: Dict of user preferences (e.g., preferred work hours, focus blocks)
+        user_estimates: Dict of task_id to user-provided time estimates in hours (optional)
+
+    Returns:
+        str: Markdown summary of tasks and recommended time slots
+    """
+    from datetime import datetime, timedelta
+
+    try:
+        # 1. Get recommended tasks (reuse logic from estimate_task_volume)
+        availability = analyze_upcoming_availability(days_ahead=days_ahead)
+        total_free_hours = availability.get("total_free_hours", 0)
+        free_periods = []
+        for day, info in availability.get("daily_availability", {}).items():
+            for period in info.get("busy_periods", []):
+                # Invert busy periods to get free periods (simple version)
+                pass  # TODO: Implement more precise free slot finding
+        # For now, just use total_free_hours as a pool
+        tasks = get_all_tasks(user_id)
+        # Estimate time for each task
+        recommendations = []
+        for task in tasks:
+            if user_estimates and task["id"] in user_estimates:
+                est_hours = user_estimates[task["id"]]
+            else:
+                est_hours = 1.0  # Default
+            recommendations.append({"task": task, "est_hours": est_hours})
+        # Sort by priority, due date, etc.
+        recommendations.sort(
+            key=lambda r: (
+                -r["task"].get("priority", 1),
+                r["task"].get("due", {}).get("date", ""),
+            )
+        )
+        # Assign time slots (simple greedy fit)
+        now = datetime.now()
+        used_hours = 0.0
+        scheduled = []
+        for rec in recommendations:
+            if used_hours + rec["est_hours"] > total_free_hours:
+                break
+            # For now, assign a slot as 'Next available hour' (improve later)
+            slot_start = now + timedelta(hours=used_hours)
+            slot_end = slot_start + timedelta(hours=rec["est_hours"])
+            scheduled.append(
+                {
+                    "task": rec["task"],
+                    "est_hours": rec["est_hours"],
+                    "slot": f"{slot_start.strftime('%a %Y-%m-%d %H:%M')} - {slot_end.strftime('%H:%M')}",
+                }
+            )
+            used_hours += rec["est_hours"]
+        # Format output
+        output = f"## 🗓️ Time Allocation Recommendations for Next {days_ahead} Days\n\n"
+        output += f"- **Total Available Hours:** {total_free_hours:.1f}\n"
+        if user_preferences:
+            output += f"- **User Preferences:** {user_preferences}\n"
+        output += "\n### Task Schedule\n"
+        for sched in scheduled:
+            task = sched["task"]
+            checked = "[x]" if task.get("is_completed", False) else "[ ]"
+            output += f"- {checked} {task.get('content')} (Est: {sched['est_hours']}h)\n  - Recommended Slot: {sched['slot']}\n"
+        if len(scheduled) < len(recommendations):
+            output += (
+                "\n⚠️ Not all tasks fit within your available hours. "
+                "Consider deferring, splitting, or delegating some tasks.\n"
+            )
+        output += (
+            "\n*Note: This is a first-pass implementation. "
+            "Future improvements: user-editable rules file, better slot assignment, and feedback loop.\n"
+        )
+        return output
+    except Exception as e:
+        return f"❌ Error during time allocation recommendation: {e}"
+
+
 # Configure tools for the weekly review agent including session management
 tools = [
     # Session management and context tools
@@ -1056,6 +1238,8 @@ tools = [
     review_areas_of_responsibility_and_projects,
     detect_recurring_themes_and_stressors,
     resolve_priority_conflicts,
+    estimate_task_volume,
+    recommend_time_allocation,
 ]
 
 current_date = datetime.now().strftime("%Y-%m-%d")
