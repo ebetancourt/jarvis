@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(uv lock:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:localhost)",
+      "mcp__puppeteer__puppeteer_navigate",
+      "mcp__puppeteer__puppeteer_screenshot",
+      "mcp__puppeteer__puppeteer_evaluate",
+      "mcp__puppeteer__puppeteer_click"
+    ],
+    "deny": []
+  }
+}

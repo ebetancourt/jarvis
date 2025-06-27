@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langchain_core._api import LangChainBetaWarning
@@ -27,6 +28,8 @@ from agents import DEFAULT_AGENT, get_agent, get_all_agent_info
 from core import settings
 from memory import initialize_database, initialize_store
 from plugins.obsidian.route import router as obsidian_router
+from service.routes.oauth import router as oauth_router, calendar_router
+from service.routes.auth import router as auth_router
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -91,6 +94,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware to allow cross-origin requests from Streamlit frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",  # Streamlit development server
+        "http://127.0.0.1:8501",  # Alternative localhost
+        "http://0.0.0.0:8501",    # Docker network access
+    ],
+    allow_credentials=True,  # Allow cookies to be sent with requests
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 router = APIRouter(dependencies=[Depends(verify_bearer)])
 
 
@@ -400,3 +417,6 @@ app.include_router(
     prefix="/obsidian",
     tags=["obsidian", "plugin"],
 )
+app.include_router(oauth_router)
+app.include_router(calendar_router)
+app.include_router(auth_router)

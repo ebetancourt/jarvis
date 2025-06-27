@@ -17,10 +17,23 @@ class Provider(StrEnum):
 
 
 class OpenAIModelName(StrEnum):
-    """https://platform.openai.com/docs/models/gpt-4o"""
+    """https://platform.openai.com/docs/models"""
 
-    GPT_4O_MINI = "gpt-4o-mini"
+    # Latest GPT-4.1 series (2024)
+    GPT_41 = "gpt-4.1"
+    GPT_41_MINI = "gpt-4.1-mini"
+    GPT_41_NANO = "gpt-4.1-nano"
+    
+    # GPT-4o series
     GPT_4O = "gpt-4o"
+    GPT_4O_MINI = "gpt-4o-mini"
+    
+    # Reasoning models (o-series)
+    O4_MINI = "o4-mini"
+    
+    # Legacy models still available
+    GPT_4_TURBO = "gpt-4-turbo"
+    GPT_35_TURBO = "gpt-3.5-turbo"
 
 
 class AzureOpenAIModelName(StrEnum):
@@ -37,11 +50,20 @@ class DeepseekModelName(StrEnum):
 
 
 class AnthropicModelName(StrEnum):
-    """https://docs.anthropic.com/en/docs/about-claude/models#model-names"""
+    """https://docs.anthropic.com/en/docs/about-claude/models"""
 
-    HAIKU_3 = "claude-3-haiku"
+    # Latest Claude 4 series (2025)
+    OPUS_4 = "claude-4-opus"
+    SONNET_4 = "claude-4-sonnet"
+    
+    # Claude 3.5 series
     HAIKU_35 = "claude-3.5-haiku"
     SONNET_35 = "claude-3.5-sonnet"
+    
+    # Legacy Claude 3 series
+    HAIKU_3 = "claude-3-haiku"
+    SONNET_3 = "claude-3-sonnet"
+    OPUS_3 = "claude-3-opus"
 
 
 class GoogleModelName(StrEnum):

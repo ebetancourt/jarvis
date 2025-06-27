@@ -1,0 +1,1757 @@
+"""
+Google Calendar Tools for Multi-Account Calendar Data Fetching.
+
+This module provides tools for fetching and analyzing calendar events across multiple
+Google Calendar accounts for the weekly review agent. It builds on the existing
+oauth_manager infrastructure to provide comprehensive calendar data access.
+
+Functional Requirements Addressed:
+- FR-007: Multi-account calendar data fetching
+- FR-014: Past week accomplishment identification from calendar events
+- FR-018: Time slot analysis and availability detection
+"""
+
+import logging
+import os
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+from urllib.parse import urlencode
+
+# Timezone handling
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    # Fallback for Python < 3.9
+    try:
+        from backports.zoneinfo import ZoneInfo
+    except ImportError:
+        # If zoneinfo is not available, create a simple fallback
+        class ZoneInfo:
+            def __init__(self, name: str):
+                self.name = name
+                # This is a very basic fallback - in production you'd want proper pytz
+                if name == "UTC":
+                    self.tzinfo = timezone.utc
+                else:
+                    # Rough approximation for common timezones
+                    offset_map = {
+                        "America/New_York": -5,
+                        "America/Chicago": -6,
+                        "America/Denver": -7,
+                        "America/Los_Angeles": -8,
+                        "Europe/London": 0,
+                        "Europe/Paris": 1,
+                        "Asia/Tokyo": 9,
+                    }
+                    offset = offset_map.get(name, 0)
+                    self.tzinfo = timezone(timedelta(hours=offset))
+
+            def __call__(self):
+                return self.tzinfo
+
+
+from common.oauth_manager import oauth_manager, OAuthToken
+
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+class TimezoneHandler:
+    """Handles timezone detection and conversion for calendar events."""
+
+    def __init__(self, user_timezone: Optional[str] = None):
+        """Initialize with user's timezone. Auto-detect if not provided."""
+        self.user_timezone = self._get_user_timezone(user_timezone)
+        logger.info(f"Using timezone: {self.user_timezone}")
+
+    def _get_user_timezone(self, provided_timezone: Optional[str] = None) -> str:
+        """Get user's timezone with fallback detection."""
+        if provided_timezone:
+            return provided_timezone
+
+        # Try environment variable first
+        env_tz = os.environ.get("TZ")
+        if env_tz:
+            return env_tz
+
+        # Try to detect system timezone
+        try:
+            import time
+
+            # Get system timezone name
+            if hasattr(time, "tzname") and time.tzname[0]:
+                # This gives us something like ('PST', 'PDT')
+                # Convert common abbreviations to IANA names
+                tz_map = {
+                    "PST": "America/Los_Angeles",
+                    "PDT": "America/Los_Angeles",
+                    "EST": "America/New_York",
+                    "EDT": "America/New_York",
+                    "CST": "America/Chicago",
+                    "CDT": "America/Chicago",
+                    "MST": "America/Denver",
+                    "MDT": "America/Denver",
+                    "GMT": "UTC",
+                    "UTC": "UTC",
+                }
+                tz_abbr = time.tzname[1] if time.daylight else time.tzname[0]
+                if tz_abbr in tz_map:
+                    return tz_map[tz_abbr]
+        except Exception as e:
+            logger.warning(f"Could not detect system timezone: {e}")
+
+        # Fallback to UTC
+        logger.warning("Using UTC as fallback timezone")
+        return "UTC"
+
+    def get_timezone(self) -> ZoneInfo:
+        """Get ZoneInfo object for user's timezone."""
+        try:
+            if isinstance(ZoneInfo, type):
+                return ZoneInfo(self.user_timezone)
+            else:
+                # Fallback ZoneInfo
+                return ZoneInfo(self.user_timezone)()
+        except Exception as e:
+            logger.error(f"Error creating timezone {self.user_timezone}: {e}")
+            return ZoneInfo("UTC")()
+
+    def to_user_timezone(self, dt: datetime) -> datetime:
+        """Convert datetime to user's timezone."""
+        if dt is None:
+            return None
+
+        # Ensure the datetime is timezone-aware
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        # Convert to user's timezone
+        user_tz = self.get_timezone()
+        return dt.astimezone(user_tz)
+
+    def to_utc(self, dt: datetime) -> datetime:
+        """Convert datetime from user's timezone to UTC."""
+        if dt is None:
+            return None
+
+        # If naive, assume it's in user's timezone
+        if dt.tzinfo is None:
+            user_tz = self.get_timezone()
+            dt = dt.replace(tzinfo=user_tz)
+
+        return dt.astimezone(timezone.utc)
+
+    def now_in_user_timezone(self) -> datetime:
+        """Get current time in user's timezone."""
+        user_tz = self.get_timezone()
+        return datetime.now(user_tz)
+
+    def today_in_user_timezone(self) -> datetime:
+        """Get start of today in user's timezone."""
+        now = self.now_in_user_timezone()
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def is_working_hours(
+        self, dt: datetime, start_hour: int = 9, end_hour: int = 17
+    ) -> bool:
+        """Check if datetime is within working hours in user's timezone."""
+        if dt is None:
+            return False
+
+        local_dt = self.to_user_timezone(dt)
+        hour = local_dt.hour
+        # Check if it's a weekday and within working hours
+        is_weekday = local_dt.weekday() < 5  # 0-6, Mon-Sun
+        is_business_hours = start_hour <= hour < end_hour
+        return is_weekday and is_business_hours
+
+    def is_weekend(self, dt: datetime) -> bool:
+        """Check if datetime is on weekend in user's timezone."""
+        if dt is None:
+            return False
+
+        local_dt = self.to_user_timezone(dt)
+        return local_dt.weekday() >= 5  # Saturday = 5, Sunday = 6
+
+    def get_day_category(self, dt: datetime) -> str:
+        """Categorize time of day in user's timezone."""
+        if dt is None:
+            return "unknown"
+
+        local_dt = self.to_user_timezone(dt)
+        hour = local_dt.hour
+
+        if 5 <= hour < 12:
+            return "morning"
+        elif 12 <= hour < 17:
+            return "afternoon"
+        elif 17 <= hour < 21:
+            return "evening"
+        else:
+            return "night"
+
+
+# Global timezone handler instance
+_timezone_handler = None
+
+
+def get_timezone_handler(user_timezone: Optional[str] = None) -> TimezoneHandler:
+    """Get or create timezone handler instance."""
+    global _timezone_handler
+    if _timezone_handler is None or user_timezone:
+        _timezone_handler = TimezoneHandler(user_timezone)
+    return _timezone_handler
+
+
+@dataclass
+class CalendarEvent:
+    """Standardized calendar event data structure."""
+
+    id: str
+    summary: str
+    description: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    all_day: bool = False
+    calendar_id: str = ""
+    calendar_name: str = ""
+    account_email: str = ""
+    location: Optional[str] = None
+    attendees: List[Dict[str, Any]] = None
+    created: Optional[datetime] = None
+    updated: Optional[datetime] = None
+    status: str = "confirmed"  # confirmed, cancelled, tentative
+    transparency: str = "opaque"  # opaque, transparent
+    visibility: str = "default"  # default, public, private
+    recurring: bool = False
+    recurring_event_id: Optional[str] = None
+    organizer: Optional[Dict[str, Any]] = None
+    creator: Optional[Dict[str, Any]] = None
+    etag: Optional[str] = None
+    html_link: Optional[str] = None
+
+    def __post_init__(self):
+        """Initialize attendees list if None."""
+        if self.attendees is None:
+            self.attendees = []
+
+    @property
+    def duration_minutes(self) -> Optional[int]:
+        """Get event duration in minutes."""
+        if not self.start_time or not self.end_time:
+            return None
+        if self.all_day:
+            return None  # All-day events don't have duration in minutes
+        delta = self.end_time - self.start_time
+        return int(delta.total_seconds() / 60)
+
+    @property
+    def is_past(self) -> bool:
+        """Check if event is in the past (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        if self.all_day:
+            # For all-day events, compare dates in user's timezone
+            local_start = tz_handler.to_user_timezone(self.start_time)
+            today = tz_handler.today_in_user_timezone()
+            return local_start.date() < today.date()
+
+        # For timed events, use end time if available, otherwise start time
+        compare_time = self.end_time if self.end_time else self.start_time
+        now = tz_handler.now_in_user_timezone()
+        return tz_handler.to_user_timezone(compare_time) < now
+
+    @property
+    def is_upcoming(self) -> bool:
+        """Check if event is upcoming (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        now = tz_handler.now_in_user_timezone()
+        local_start = tz_handler.to_user_timezone(self.start_time)
+        return local_start > now
+
+    @property
+    def is_today(self) -> bool:
+        """Check if event is today (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        local_start = tz_handler.to_user_timezone(self.start_time)
+        today = tz_handler.today_in_user_timezone()
+        return local_start.date() == today.date()
+
+    @property
+    def is_this_week(self) -> bool:
+        """Check if event is this week (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        local_start = tz_handler.to_user_timezone(self.start_time)
+        today = tz_handler.today_in_user_timezone()
+
+        # Get start of week (Monday)
+        start_of_week = today - timedelta(days=today.weekday())
+        end_of_week = start_of_week + timedelta(days=6)
+
+        event_date = local_start.date()
+        return start_of_week.date() <= event_date <= end_of_week.date()
+
+    @property
+    def is_working_hours(self) -> bool:
+        """Check if event is during working hours (timezone-aware)."""
+        if not self.start_time or self.all_day:
+            return False
+
+        tz_handler = get_timezone_handler()
+        return tz_handler.is_working_hours(self.start_time)
+
+    @property
+    def is_weekend(self) -> bool:
+        """Check if event is on weekend (timezone-aware)."""
+        if not self.start_time:
+            return False
+
+        tz_handler = get_timezone_handler()
+        return tz_handler.is_weekend(self.start_time)
+
+    @property
+    def day_category(self) -> str:
+        """Get time of day category (morning/afternoon/evening/night)."""
+        if not self.start_time or self.all_day:
+            return "all_day" if self.all_day else "unknown"
+
+        tz_handler = get_timezone_handler()
+        return tz_handler.get_day_category(self.start_time)
+
+    def to_user_timezone(self) -> "CalendarEvent":
+        """Return a copy of the event with times converted to user's timezone."""
+        tz_handler = get_timezone_handler()
+
+        # Create a copy of the event
+        event_copy = CalendarEvent(
+            id=self.id,
+            summary=self.summary,
+            description=self.description,
+            start_time=(
+                tz_handler.to_user_timezone(self.start_time)
+                if self.start_time
+                else None
+            ),
+            end_time=(
+                tz_handler.to_user_timezone(self.end_time) if self.end_time else None
+            ),
+            all_day=self.all_day,
+            calendar_id=self.calendar_id,
+            calendar_name=self.calendar_name,
+            account_email=self.account_email,
+            location=self.location,
+            attendees=self.attendees.copy() if self.attendees else [],
+            created=tz_handler.to_user_timezone(self.created) if self.created else None,
+            updated=tz_handler.to_user_timezone(self.updated) if self.updated else None,
+            status=self.status,
+            transparency=self.transparency,
+            visibility=self.visibility,
+            recurring=self.recurring,
+            recurring_event_id=self.recurring_event_id,
+            organizer=self.organizer,
+            creator=self.creator,
+            etag=self.etag,
+            html_link=self.html_link,
+        )
+
+        return event_copy
+
+
+@dataclass
+class CalendarSummary:
+    """Summary of calendar events for analysis."""
+
+    total_events: int
+    events_by_calendar: Dict[str, int]
+    events_by_account: Dict[str, int]
+    events_by_day: Dict[str, int]  # Date string -> count
+    total_duration_minutes: int
+    average_event_duration: Optional[float]
+    busiest_day: Optional[str]
+    busiest_account: Optional[str]
+    busiest_calendar: Optional[str]
+    upcoming_events: int
+    past_events: int
+    all_day_events: int
+    working_hours_events: int  # 9 AM - 5 PM
+    evening_events: int  # After 5 PM
+    weekend_events: int
+
+
+class CalendarAPIError(Exception):
+    """Exception raised for Google Calendar API errors."""
+
+    pass
+
+
+class CalendarAuthError(CalendarAPIError):
+    """Exception raised for authentication/authorization errors."""
+
+    pass
+
+
+class CalendarRateLimitError(CalendarAPIError):
+    """Exception raised when API rate limits are exceeded."""
+
+    pass
+
+
+class CalendarDataFetcher:
+    """Handles fetching calendar data from Google Calendar API across multiple accounts."""
+
+    CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
+
+    def __init__(self, oauth_manager_instance=None):
+        """Initialize with oauth manager instance."""
+        self.oauth_manager = oauth_manager_instance or oauth_manager
+        self.request_timeout = 30
+        self.max_results_per_request = 250  # Google Calendar API limit
+        self.max_retries = 3
+        self.retry_delay = 1.0  # seconds
+
+    def get_all_google_accounts(self) -> List[Dict[str, Any]]:
+        """Get all connected Google accounts with basic info."""
+        try:
+            return self.oauth_manager.get_user_accounts("google")
+        except Exception as e:
+            logger.error(f"Error getting Google accounts: {e}")
+            return []
+
+    def get_calendars_for_account(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get calendars for a specific Google account."""
+        try:
+            # Get enabled calendars only
+            calendars = self.oauth_manager.get_enabled_calendars(user_id)
+            if not calendars:
+                # Fall back to getting all calendars if no preferences set
+                token = self.oauth_manager.get_valid_token("google", user_id)
+                if token:
+                    # Use the GoogleOAuth class to fetch calendars
+                    from common.oauth_manager import GoogleOAuth, get_google_config
+
+                    google_config = get_google_config()
+                    if google_config:
+                        google_oauth = GoogleOAuth(google_config, self.oauth_manager)
+                        calendars = google_oauth.get_calendars(token)
+                        if calendars:
+                            # Store preferences for future use
+                            self.oauth_manager.store_calendar_preferences(
+                                user_id, calendars
+                            )
+
+            return calendars or []
+        except Exception as e:
+            logger.error(f"Error getting calendars for account {user_id}: {e}")
+            return []
+
+    def get_all_calendars_multi_account(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Get calendars from all connected Google accounts."""
+        all_calendars = {}
+        accounts = self.get_all_google_accounts()
+
+        for account in accounts:
+            user_id = account["user_id"]
+            email = account["email"]
+            calendars = self.get_calendars_for_account(user_id)
+            if calendars:
+                all_calendars[email] = calendars
+
+        return all_calendars
+
+    def _make_calendar_api_request(
+        self, token: OAuthToken, endpoint: str, params: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Make a request to Google Calendar API with error handling and retries."""
+        headers = {
+            "Authorization": f"Bearer {token.access_token}",
+            "Accept": "application/json",
+        }
+
+        url = f"{self.CALENDAR_API_BASE}/{endpoint}"
+        if params:
+            url += f"?{urlencode(params)}"
+
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.get(
+                    url, headers=headers, timeout=self.request_timeout
+                )
+
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 401:
+                    raise CalendarAuthError(f"Authentication failed for Calendar API")
+                elif response.status_code == 403:
+                    # Check if it's a rate limit error
+                    error_data = response.json().get("error", {})
+                    if "quotaExceeded" in error_data.get("message", ""):
+                        raise CalendarRateLimitError("Calendar API quota exceeded")
+                    else:
+                        raise CalendarAPIError(
+                            f"Access denied: {error_data.get('message', 'Unknown error')}"
+                        )
+                elif response.status_code == 429:
+                    # Rate limited, wait and retry
+                    wait_time = self.retry_delay * (2**attempt)
+                    logger.warning(
+                        f"Rate limited, waiting {wait_time}s before retry {attempt + 1}"
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    response.raise_for_status()
+
+            except requests.RequestException as e:
+                if attempt == self.max_retries - 1:
+                    logger.error(
+                        f"Calendar API request failed after {self.max_retries} attempts: {e}"
+                    )
+                    raise CalendarAPIError(f"Request failed: {e}")
+                else:
+                    logger.warning(
+                        f"Calendar API request attempt {attempt + 1} failed: {e}"
+                    )
+                    time.sleep(self.retry_delay * (attempt + 1))
+
+        return None
+
+    def fetch_events_from_calendar(
+        self,
+        user_id: str,
+        calendar_id: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        max_results: Optional[int] = None,
+    ) -> List[CalendarEvent]:
+        """Fetch events from a specific calendar."""
+        token = self.oauth_manager.get_valid_token("google", user_id)
+        if not token:
+            logger.warning(f"No valid token for user {user_id}")
+            return []
+
+        # Set default time range if not provided (last 30 days)
+        if not start_time:
+            start_time = datetime.now() - timedelta(days=30)
+        if not end_time:
+            end_time = datetime.now() + timedelta(days=30)
+
+        # Ensure timezone awareness
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+
+        params = {
+            "timeMin": start_time.isoformat(),
+            "timeMax": end_time.isoformat(),
+            "singleEvents": "true",  # Expand recurring events
+            "orderBy": "startTime",
+            "maxResults": max_results or self.max_results_per_request,
+        }
+
+        try:
+            response_data = self._make_calendar_api_request(
+                token, f"calendars/{calendar_id}/events", params
+            )
+
+            if not response_data:
+                return []
+
+            events = []
+            account_info = self._get_account_info_from_user_id(user_id)
+            account_email = (
+                account_info.get("email", "unknown") if account_info else "unknown"
+            )
+
+            for event_data in response_data.get("items", []):
+                event = self._parse_event_data(event_data, calendar_id, account_email)
+                if event:
+                    events.append(event)
+
+            # Handle pagination if there are more results
+            next_page_token = response_data.get("nextPageToken")
+            while next_page_token and len(events) < (max_results or 1000):
+                params["pageToken"] = next_page_token
+                params["maxResults"] = min(
+                    self.max_results_per_request, (max_results or 1000) - len(events)
+                )
+
+                response_data = self._make_calendar_api_request(
+                    token, f"calendars/{calendar_id}/events", params
+                )
+
+                if not response_data:
+                    break
+
+                for event_data in response_data.get("items", []):
+                    event = self._parse_event_data(
+                        event_data, calendar_id, account_email
+                    )
+                    if event:
+                        events.append(event)
+
+                next_page_token = response_data.get("nextPageToken")
+
+            logger.info(f"Fetched {len(events)} events from calendar {calendar_id}")
+            return events
+
+        except Exception as e:
+            logger.error(f"Error fetching events from calendar {calendar_id}: {e}")
+            return []
+
+    def _get_account_info_from_user_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get account info from user_id."""
+        accounts = self.get_all_google_accounts()
+        for account in accounts:
+            if account["user_id"] == user_id:
+                return account
+        return None
+
+    def _parse_event_data(
+        self, event_data: Dict[str, Any], calendar_id: str, account_email: str
+    ) -> Optional[CalendarEvent]:
+        """Parse raw Google Calendar event data into CalendarEvent object."""
+        try:
+            # Parse start and end times
+            start_info = event_data.get("start", {})
+            end_info = event_data.get("end", {})
+
+            # Check if it's an all-day event
+            all_day = "date" in start_info and "dateTime" not in start_info
+
+            if all_day:
+                # All-day event - parse date only
+                start_time = datetime.fromisoformat(start_info["date"]).replace(
+                    tzinfo=timezone.utc
+                )
+                end_time = datetime.fromisoformat(end_info["date"]).replace(
+                    tzinfo=timezone.utc
+                )
+            else:
+                # Timed event - parse datetime
+                start_time = datetime.fromisoformat(
+                    start_info.get("dateTime", "").replace("Z", "+00:00")
+                )
+                end_time = datetime.fromisoformat(
+                    end_info.get("dateTime", "").replace("Z", "+00:00")
+                )
+
+            # Parse attendees
+            attendees = []
+            for attendee in event_data.get("attendees", []):
+                attendees.append(
+                    {
+                        "email": attendee.get("email"),
+                        "displayName": attendee.get("displayName"),
+                        "responseStatus": attendee.get("responseStatus", "needsAction"),
+                        "organizer": attendee.get("organizer", False),
+                        "self": attendee.get("self", False),
+                    }
+                )
+
+            # Parse organizer and creator
+            organizer = event_data.get("organizer", {})
+            creator = event_data.get("creator", {})
+
+            # Parse creation and update times
+            created = None
+            updated = None
+            if event_data.get("created"):
+                created = datetime.fromisoformat(
+                    event_data["created"].replace("Z", "+00:00")
+                )
+            if event_data.get("updated"):
+                updated = datetime.fromisoformat(
+                    event_data["updated"].replace("Z", "+00:00")
+                )
+
+            return CalendarEvent(
+                id=event_data.get("id", ""),
+                summary=event_data.get("summary", "Untitled Event"),
+                description=event_data.get("description"),
+                start_time=start_time,
+                end_time=end_time,
+                all_day=all_day,
+                calendar_id=calendar_id,
+                calendar_name=self._get_calendar_name(calendar_id, account_email),
+                account_email=account_email,
+                location=event_data.get("location"),
+                attendees=attendees,
+                created=created,
+                updated=updated,
+                status=event_data.get("status", "confirmed"),
+                transparency=event_data.get("transparency", "opaque"),
+                visibility=event_data.get("visibility", "default"),
+                recurring="recurringEventId" in event_data,
+                recurring_event_id=event_data.get("recurringEventId"),
+                organizer=organizer,
+                creator=creator,
+                etag=event_data.get("etag"),
+                html_link=event_data.get("htmlLink"),
+            )
+
+        except Exception as e:
+            logger.error(f"Error parsing event data: {e}")
+            return None
+
+    def _get_calendar_name(self, calendar_id: str, account_email: str) -> str:
+        """Get calendar name from calendar ID and account email."""
+        # Try to find the calendar name from stored preferences
+        accounts = self.get_all_google_accounts()
+        for account in accounts:
+            if account["email"] == account_email:
+                calendars = self.get_calendars_for_account(account["user_id"])
+                for calendar in calendars:
+                    if calendar.get("id") == calendar_id:
+                        return calendar.get("summary", "Unknown Calendar")
+
+        # Fallback - if it's the primary calendar, use the email
+        if calendar_id == account_email:
+            return f"Primary ({account_email})"
+
+        return "Unknown Calendar"
+
+    def fetch_events_multi_account(
+        self,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        max_results_per_calendar: Optional[int] = None,
+        filter_calendars: Optional[List[str]] = None,
+        exclude_calendars: Optional[List[str]] = None,
+    ) -> List[CalendarEvent]:
+        """Fetch events from all calendars across all connected Google accounts."""
+        all_events = []
+        accounts = self.get_all_google_accounts()
+
+        if not accounts:
+            logger.warning("No Google accounts connected")
+            return []
+
+        # Use ThreadPoolExecutor for concurrent fetching
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_account = {}
+
+            for account in accounts:
+                if not account["is_valid"]:
+                    logger.warning(f"Skipping invalid account: {account['email']}")
+                    continue
+
+                user_id = account["user_id"]
+                calendars = self.get_calendars_for_account(user_id)
+
+                for calendar in calendars:
+                    calendar_id = calendar.get("id")
+                    if not calendar_id:
+                        continue
+
+                    # Apply calendar filters
+                    if filter_calendars and calendar_id not in filter_calendars:
+                        continue
+                    if exclude_calendars and calendar_id in exclude_calendars:
+                        continue
+
+                    # Submit the fetch task
+                    future = executor.submit(
+                        self.fetch_events_from_calendar,
+                        user_id,
+                        calendar_id,
+                        start_time,
+                        end_time,
+                        max_results_per_calendar,
+                    )
+                    future_to_account[future] = {
+                        "account": account,
+                        "calendar": calendar,
+                    }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_account):
+                try:
+                    events = future.result()
+                    all_events.extend(events)
+                    account_info = future_to_account[future]["account"]
+                    calendar_info = future_to_account[future]["calendar"]
+                    logger.info(
+                        f"Fetched {len(events)} events from {calendar_info.get('summary', 'Unknown')} "
+                        f"({account_info['email']})"
+                    )
+                except Exception as e:
+                    account_info = future_to_account[future]["account"]
+                    calendar_info = future_to_account[future]["calendar"]
+                    logger.error(
+                        f"Error fetching from {calendar_info.get('summary', 'Unknown')} "
+                        f"({account_info['email']}): {e}"
+                    )
+
+        # Sort events by start time
+        all_events.sort(
+            key=lambda e: e.start_time or datetime.min.replace(tzinfo=timezone.utc)
+        )
+
+        logger.info(f"Total events fetched from all accounts: {len(all_events)}")
+        return all_events
+
+
+class CalendarAnalyzer:
+    """Analyzes calendar events for insights and patterns."""
+
+    def __init__(self):
+        """Initialize the analyzer."""
+        pass
+
+    def analyze_events(self, events: List[CalendarEvent]) -> CalendarSummary:
+        """Analyze a list of calendar events and return summary statistics."""
+        if not events:
+            return CalendarSummary(
+                total_events=0,
+                events_by_calendar={},
+                events_by_account={},
+                events_by_day={},
+                total_duration_minutes=0,
+                average_event_duration=None,
+                busiest_day=None,
+                busiest_account=None,
+                busiest_calendar=None,
+                upcoming_events=0,
+                past_events=0,
+                all_day_events=0,
+                working_hours_events=0,
+                evening_events=0,
+                weekend_events=0,
+            )
+
+        # Initialize counters
+        events_by_calendar = defaultdict(int)
+        events_by_account = defaultdict(int)
+        events_by_day = defaultdict(int)
+        total_duration = 0
+        duration_count = 0
+        upcoming_count = 0
+        past_count = 0
+        all_day_count = 0
+        working_hours_count = 0
+        evening_count = 0
+        weekend_count = 0
+
+        for event in events:
+            # Count by calendar and account
+            events_by_calendar[f"{event.calendar_name} ({event.account_email})"] += 1
+            events_by_account[event.account_email] += 1
+
+            # Count by day
+            day_key = event.start_time.strftime("%Y-%m-%d")
+            events_by_day[day_key] += 1
+
+            # Duration analysis
+            if event.duration_minutes:
+                total_duration += event.duration_minutes
+                duration_count += 1
+
+            # Time-based categorization
+            if event.is_upcoming:
+                upcoming_count += 1
+            elif event.is_past:
+                past_count += 1
+
+            if event.all_day:
+                all_day_count += 1
+
+            # Working hours (9 AM - 5 PM on weekdays)
+            if not event.all_day and event.start_time:
+                hour = event.start_time.hour
+                weekday = event.start_time.weekday()  # 0 = Monday, 6 = Sunday
+
+                if weekday >= 5:  # Weekend (Saturday = 5, Sunday = 6)
+                    weekend_count += 1
+                elif 9 <= hour < 17:  # 9 AM - 5 PM
+                    working_hours_count += 1
+                elif hour >= 17:  # After 5 PM
+                    evening_count += 1
+
+        # Calculate averages and identify busiest periods
+        average_duration = (
+            total_duration / duration_count if duration_count > 0 else None
+        )
+        busiest_day = (
+            max(events_by_day.items(), key=lambda x: x[1])[0] if events_by_day else None
+        )
+        busiest_account = (
+            max(events_by_account.items(), key=lambda x: x[1])[0]
+            if events_by_account
+            else None
+        )
+        busiest_calendar = (
+            max(events_by_calendar.items(), key=lambda x: x[1])[0]
+            if events_by_calendar
+            else None
+        )
+
+        return CalendarSummary(
+            total_events=len(events),
+            events_by_calendar=dict(events_by_calendar),
+            events_by_account=dict(events_by_account),
+            events_by_day=dict(events_by_day),
+            total_duration_minutes=total_duration,
+            average_event_duration=average_duration,
+            busiest_day=busiest_day,
+            busiest_account=busiest_account,
+            busiest_calendar=busiest_calendar,
+            upcoming_events=upcoming_count,
+            past_events=past_count,
+            all_day_events=all_day_count,
+            working_hours_events=working_hours_count,
+            evening_events=evening_count,
+            weekend_events=weekend_count,
+        )
+
+    def get_past_week_accomplishments(
+        self,
+        events: List[CalendarEvent],
+        accomplishment_keywords: Optional[List[str]] = None,
+    ) -> List[CalendarEvent]:
+        """Identify events from the past week that represent accomplishments."""
+        if not accomplishment_keywords:
+            accomplishment_keywords = [
+                "meeting",
+                "presentation",
+                "demo",
+                "review",
+                "project",
+                "milestone",
+                "delivery",
+                "launch",
+                "completion",
+                "training",
+                "workshop",
+                "conference",
+                "interview",
+                "onboarding",
+                "standup",
+                "sync",
+                "planning",
+                "retrospective",
+                "deployment",
+                "release",
+                "client",
+                "customer",
+                "stakeholder",
+            ]
+
+        # Get date range for past week
+        today = datetime.now().date()
+        start_of_week = today - timedelta(days=7)
+
+        past_week_events = []
+        for event in events:
+            # Check if event is in the past week
+            if event.start_time and start_of_week <= event.start_time.date() <= today:
+                # Check if event represents an accomplishment
+                if self._is_accomplishment_event(event, accomplishment_keywords):
+                    past_week_events.append(event)
+
+        # Sort by start time (most recent first)
+        past_week_events.sort(key=lambda e: e.start_time, reverse=True)
+        return past_week_events
+
+    def _is_accomplishment_event(
+        self, event: CalendarEvent, keywords: List[str]
+    ) -> bool:
+        """Check if an event represents an accomplishment based on keywords."""
+        # Combine summary and description for searching
+        text_to_search = (event.summary + " " + (event.description or "")).lower()
+
+        # Check for accomplishment keywords
+        for keyword in keywords:
+            if keyword.lower() in text_to_search:
+                return True
+
+        # Additional heuristics
+        # Events with multiple attendees (collaborative work)
+        if len(event.attendees) >= 3:
+            return True
+
+        # Events longer than 30 minutes (substantial meetings)
+        if event.duration_minutes and event.duration_minutes >= 30:
+            return True
+
+        return False
+
+    def analyze_availability(
+        self,
+        events: List[CalendarEvent],
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        working_hours_start: int = 9,
+        working_hours_end: int = 17,
+        include_weekends: bool = False,
+    ) -> Dict[str, Any]:
+        """Analyze availability windows based on existing calendar events."""
+        if not start_date:
+            start_date = datetime.now()
+        if not end_date:
+            end_date = start_date + timedelta(days=7)  # Next week by default
+
+        # Filter events to the specified date range
+        relevant_events = [
+            event
+            for event in events
+            if event.start_time
+            and start_date <= event.start_time <= end_date
+            and event.status == "confirmed"
+            and event.transparency == "opaque"  # Only consider "busy" events
+        ]
+
+        # Generate availability analysis
+        availability_analysis = {
+            "analysis_period": {
+                "start": start_date.isoformat(),
+                "end": end_date.isoformat(),
+            },
+            "busy_periods": [],
+            "free_periods": [],
+            "daily_availability": {},
+            "total_busy_hours": 0,
+            "total_free_hours": 0,
+            "busiest_days": [],
+            "lightest_days": [],
+        }
+
+        # Process each day in the range
+        current_date = start_date.date()
+        end_analysis_date = end_date.date()
+        daily_busy_minutes = {}
+
+        while current_date <= end_analysis_date:
+            # Skip weekends if not included
+            if not include_weekends and current_date.weekday() >= 5:
+                current_date += timedelta(days=1)
+                continue
+
+            # Get events for this day
+            day_events = [
+                event
+                for event in relevant_events
+                if event.start_time.date() == current_date and not event.all_day
+            ]
+
+            # Calculate busy periods for this day
+            busy_periods = []
+            total_busy_minutes = 0
+
+            for event in day_events:
+                if event.duration_minutes:
+                    # Constrain to working hours if specified
+                    event_start = event.start_time.time()
+                    event_end = event.end_time.time()
+
+                    working_start = datetime.min.time().replace(
+                        hour=working_hours_start
+                    )
+                    working_end = datetime.min.time().replace(hour=working_hours_end)
+
+                    # Check if event overlaps with working hours
+                    if event_start < working_end and event_end > working_start:
+                        # Calculate overlap
+                        overlap_start = max(event_start, working_start)
+                        overlap_end = min(event_end, working_end)
+
+                        overlap_minutes = (
+                            datetime.combine(current_date, overlap_end)
+                            - datetime.combine(current_date, overlap_start)
+                        ).total_seconds() / 60
+
+                        total_busy_minutes += overlap_minutes
+                        busy_periods.append(
+                            {
+                                "start": overlap_start.strftime("%H:%M"),
+                                "end": overlap_end.strftime("%H:%M"),
+                                "event_summary": event.summary,
+                                "duration_minutes": overlap_minutes,
+                            }
+                        )
+
+            # Calculate total working minutes for the day
+            total_working_minutes = (working_hours_end - working_hours_start) * 60
+            free_minutes = total_working_minutes - total_busy_minutes
+
+            daily_busy_minutes[current_date.isoformat()] = total_busy_minutes
+            availability_analysis["daily_availability"][current_date.isoformat()] = {
+                "busy_minutes": total_busy_minutes,
+                "free_minutes": max(0, free_minutes),
+                "busy_periods": busy_periods,
+                "availability_percentage": max(0, free_minutes)
+                / total_working_minutes
+                * 100,
+            }
+
+            availability_analysis["total_busy_hours"] += total_busy_minutes / 60
+            availability_analysis["total_free_hours"] += max(0, free_minutes) / 60
+
+            current_date += timedelta(days=1)
+
+        # Identify busiest and lightest days
+        if daily_busy_minutes:
+            sorted_days = sorted(daily_busy_minutes.items(), key=lambda x: x[1])
+            availability_analysis["lightest_days"] = [day for day, _ in sorted_days[:3]]
+            availability_analysis["busiest_days"] = [day for day, _ in sorted_days[-3:]]
+
+        return availability_analysis
+
+    def find_free_time_slots(
+        self,
+        events: List[CalendarEvent],
+        start_date: datetime,
+        end_date: datetime,
+        slot_duration_minutes: int = 60,
+        working_hours_start: int = 9,
+        working_hours_end: int = 17,
+        include_weekends: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Find available time slots of specified duration."""
+        free_slots = []
+
+        current_date = start_date.date()
+        end_analysis_date = end_date.date()
+
+        while current_date <= end_analysis_date:
+            # Skip weekends if not included
+            if not include_weekends and current_date.weekday() >= 5:
+                current_date += timedelta(days=1)
+                continue
+
+            # Get busy periods for this day
+            day_events = [
+                event
+                for event in events
+                if (
+                    event.start_time.date() == current_date
+                    and not event.all_day
+                    and event.status == "confirmed"
+                    and event.transparency == "opaque"
+                )
+            ]
+
+            # Sort events by start time
+            day_events.sort(key=lambda e: e.start_time)
+
+            # Find gaps between events
+            day_start = datetime.combine(
+                current_date, datetime.min.time().replace(hour=working_hours_start)
+            )
+            day_end = datetime.combine(
+                current_date, datetime.min.time().replace(hour=working_hours_end)
+            )
+
+            # Check for slot at the beginning of the day
+            if not day_events or day_events[0].start_time > day_start + timedelta(
+                minutes=slot_duration_minutes
+            ):
+                first_event_start = day_events[0].start_time if day_events else day_end
+                available_minutes = (first_event_start - day_start).total_seconds() / 60
+
+                if available_minutes >= slot_duration_minutes:
+                    free_slots.append(
+                        {
+                            "start": day_start,
+                            "end": min(
+                                day_start + timedelta(minutes=slot_duration_minutes),
+                                first_event_start,
+                            ),
+                            "duration_minutes": min(
+                                slot_duration_minutes, available_minutes
+                            ),
+                            "type": "morning_slot",
+                        }
+                    )
+
+            # Check gaps between events
+            for i in range(len(day_events) - 1):
+                current_event_end = day_events[i].end_time
+                next_event_start = day_events[i + 1].start_time
+
+                gap_minutes = (
+                    next_event_start - current_event_end
+                ).total_seconds() / 60
+
+                if gap_minutes >= slot_duration_minutes:
+                    free_slots.append(
+                        {
+                            "start": current_event_end,
+                            "end": min(
+                                current_event_end
+                                + timedelta(minutes=slot_duration_minutes),
+                                next_event_start,
+                            ),
+                            "duration_minutes": min(slot_duration_minutes, gap_minutes),
+                            "type": "between_events",
+                        }
+                    )
+
+            # Check for slot at the end of the day
+            if day_events:
+                last_event_end = day_events[-1].end_time
+                if last_event_end < day_end - timedelta(minutes=slot_duration_minutes):
+                    available_minutes = (day_end - last_event_end).total_seconds() / 60
+
+                    if available_minutes >= slot_duration_minutes:
+                        free_slots.append(
+                            {
+                                "start": last_event_end,
+                                "end": min(
+                                    last_event_end
+                                    + timedelta(minutes=slot_duration_minutes),
+                                    day_end,
+                                ),
+                                "duration_minutes": min(
+                                    slot_duration_minutes, available_minutes
+                                ),
+                                "type": "evening_slot",
+                            }
+                        )
+
+            current_date += timedelta(days=1)
+
+        return free_slots
+
+    def detect_calendar_conflicts(
+        self,
+        events: List[CalendarEvent],
+        include_all_day: bool = False,
+        conflict_threshold_minutes: int = 15,
+    ) -> List[Dict[str, Any]]:
+        """Detect conflicts between calendar events across multiple accounts."""
+        conflicts = []
+
+        # Filter out all-day events if requested
+        if not include_all_day:
+            events = [event for event in events if not event.all_day]
+
+        # Sort events by start time for easier processing
+        events.sort(
+            key=lambda e: e.start_time or datetime.min.replace(tzinfo=timezone.utc)
+        )
+
+        # Check each pair of events for conflicts
+        for i in range(len(events)):
+            for j in range(i + 1, len(events)):
+                event1 = events[i]
+                event2 = events[j]
+
+                # Skip if events are from the same calendar (not a multi-account conflict)
+                if (
+                    event1.calendar_id == event2.calendar_id
+                    and event1.account_email == event2.account_email
+                ):
+                    continue
+
+                # Check for time overlap
+                conflict_info = self._check_event_overlap(
+                    event1, event2, conflict_threshold_minutes
+                )
+                if conflict_info:
+                    conflicts.append(conflict_info)
+
+        # Sort conflicts by start time and overlap duration
+        conflicts.sort(key=lambda x: (x["start_time"], -x["overlap_minutes"]))
+
+        return conflicts
+
+    def _check_event_overlap(
+        self, event1: CalendarEvent, event2: CalendarEvent, threshold_minutes: int = 15
+    ) -> Optional[Dict[str, Any]]:
+        """Check if two events overlap and return conflict information."""
+        if (
+            not event1.start_time
+            or not event1.end_time
+            or not event2.start_time
+            or not event2.end_time
+        ):
+            return None
+
+        # Calculate overlap
+        overlap_start = max(event1.start_time, event2.start_time)
+        overlap_end = min(event1.end_time, event2.end_time)
+
+        # Check if there's actually an overlap
+        if overlap_start >= overlap_end:
+            return None
+
+        overlap_duration = (overlap_end - overlap_start).total_seconds() / 60
+
+        # Only report conflicts above the threshold
+        if overlap_duration < threshold_minutes:
+            return None
+
+        # Determine conflict severity
+        event1_duration = event1.duration_minutes or 0
+        event2_duration = event2.duration_minutes or 0
+
+        # Calculate what percentage of each event is in conflict
+        event1_conflict_pct = (
+            (overlap_duration / event1_duration * 100) if event1_duration > 0 else 0
+        )
+        event2_conflict_pct = (
+            (overlap_duration / event2_duration * 100) if event2_duration > 0 else 0
+        )
+
+        # Determine severity based on overlap percentage
+        max_conflict_pct = max(event1_conflict_pct, event2_conflict_pct)
+        if max_conflict_pct >= 80:
+            severity = "critical"
+        elif max_conflict_pct >= 50:
+            severity = "major"
+        elif max_conflict_pct >= 25:
+            severity = "moderate"
+        else:
+            severity = "minor"
+
+        return {
+            "conflict_id": f"{event1.id}_{event2.id}",
+            "severity": severity,
+            "start_time": overlap_start.isoformat(),
+            "end_time": overlap_end.isoformat(),
+            "overlap_minutes": overlap_duration,
+            "event1": {
+                "id": event1.id,
+                "summary": event1.summary,
+                "calendar_name": event1.calendar_name,
+                "account_email": event1.account_email,
+                "start_time": event1.start_time.isoformat(),
+                "end_time": event1.end_time.isoformat(),
+                "conflict_percentage": event1_conflict_pct,
+            },
+            "event2": {
+                "id": event2.id,
+                "summary": event2.summary,
+                "calendar_name": event2.calendar_name,
+                "account_email": event2.account_email,
+                "start_time": event2.start_time.isoformat(),
+                "end_time": event2.end_time.isoformat(),
+                "conflict_percentage": event2_conflict_pct,
+            },
+            "resolution_suggestions": self._get_conflict_resolution_suggestions(
+                event1, event2, overlap_duration
+            ),
+        }
+
+    def _get_conflict_resolution_suggestions(
+        self, event1: CalendarEvent, event2: CalendarEvent, overlap_minutes: float
+    ) -> List[str]:
+        """Generate resolution suggestions for conflicting events."""
+        suggestions = []
+
+        # Basic suggestions based on event characteristics
+        if len(event1.attendees) == 0 and len(event2.attendees) > 0:
+            suggestions.append(
+                f"Consider rescheduling '{event1.summary}' as it has no attendees"
+            )
+        elif len(event2.attendees) == 0 and len(event1.attendees) > 0:
+            suggestions.append(
+                f"Consider rescheduling '{event2.summary}' as it has no attendees"
+            )
+
+        # Duration-based suggestions
+        event1_duration = event1.duration_minutes or 0
+        event2_duration = event2.duration_minutes or 0
+
+        if event1_duration < 30 and event2_duration >= 60:
+            suggestions.append(
+                f"Consider moving the shorter meeting '{event1.summary}' to avoid conflict"
+            )
+        elif event2_duration < 30 and event1_duration >= 60:
+            suggestions.append(
+                f"Consider moving the shorter meeting '{event2.summary}' to avoid conflict"
+            )
+
+        # Calendar-based suggestions
+        if (
+            "personal" in event1.calendar_name.lower()
+            and "work" in event2.calendar_name.lower()
+        ):
+            suggestions.append(
+                f"Consider rescheduling personal event '{event1.summary}' to avoid work conflict"
+            )
+        elif (
+            "personal" in event2.calendar_name.lower()
+            and "work" in event1.calendar_name.lower()
+        ):
+            suggestions.append(
+                f"Consider rescheduling personal event '{event2.summary}' to avoid work conflict"
+            )
+
+        # Overlap-based suggestions
+        if overlap_minutes < 30:
+            suggestions.append(
+                "Consider shortening one of the events or adjusting start/end times"
+            )
+        else:
+            suggestions.append(
+                "Significant overlap detected - one event should be rescheduled"
+            )
+
+        # Account-based suggestions
+        if event1.account_email != event2.account_email:
+            suggestions.append(
+                "Conflict detected across different Google accounts - check visibility and coordination"
+            )
+
+        return suggestions or [
+            "Review both events and reschedule one to resolve the conflict"
+        ]
+
+
+# High-level convenience functions for the weekly review agent
+
+
+def get_all_calendar_events(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    max_results_per_calendar: Optional[int] = None,
+) -> List[CalendarEvent]:
+    """Get all calendar events from all connected Google accounts."""
+    fetcher = CalendarDataFetcher()
+    return fetcher.fetch_events_multi_account(
+        start_time=start_time,
+        end_time=end_time,
+        max_results_per_calendar=max_results_per_calendar,
+    )
+
+
+def get_past_week_accomplishments(
+    accomplishment_keywords: Optional[List[str]] = None,
+) -> List[CalendarEvent]:
+    """Get accomplishment events from the past week across all accounts."""
+    # Get events from the past 2 weeks to ensure we capture the full past week
+    start_time = datetime.now() - timedelta(days=14)
+    end_time = datetime.now()
+
+    events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+
+    analyzer = CalendarAnalyzer()
+    return analyzer.get_past_week_accomplishments(events, accomplishment_keywords)
+
+
+def analyze_upcoming_availability(
+    days_ahead: int = 7,
+    working_hours_start: int = 9,
+    working_hours_end: int = 17,
+    include_weekends: bool = False,
+) -> Dict[str, Any]:
+    """Analyze availability for the upcoming period."""
+    start_time = datetime.now()
+    end_time = start_time + timedelta(days=days_ahead)
+
+    events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+
+    analyzer = CalendarAnalyzer()
+    return analyzer.analyze_availability(
+        events,
+        start_time,
+        end_time,
+        working_hours_start,
+        working_hours_end,
+        include_weekends,
+    )
+
+
+def find_next_available_slots(
+    slot_duration_minutes: int = 60,
+    days_ahead: int = 7,
+    max_slots: int = 10,
+    working_hours_start: int = 9,
+    working_hours_end: int = 17,
+    include_weekends: bool = False,
+) -> List[Dict[str, Any]]:
+    """Find the next available time slots of specified duration."""
+    start_time = datetime.now()
+    end_time = start_time + timedelta(days=days_ahead)
+
+    events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+
+    analyzer = CalendarAnalyzer()
+    slots = analyzer.find_free_time_slots(
+        events,
+        start_time,
+        end_time,
+        slot_duration_minutes,
+        working_hours_start,
+        working_hours_end,
+        include_weekends,
+    )
+
+    return slots[:max_slots]
+
+
+def get_calendar_summary(
+    start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
+) -> CalendarSummary:
+    """Get a comprehensive summary of calendar events."""
+    events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+    analyzer = CalendarAnalyzer()
+    return analyzer.analyze_events(events)
+
+
+def test_calendar_connection() -> Dict[str, Any]:
+    """Test calendar connections and return status information."""
+    fetcher = CalendarDataFetcher()
+    accounts = fetcher.get_all_google_accounts()
+
+    result = {
+        "connected_accounts": len(accounts),
+        "accounts": [],
+        "total_calendars": 0,
+        "connection_status": "healthy" if accounts else "no_accounts",
+    }
+
+    for account in accounts:
+        account_info = {
+            "email": account["email"],
+            "is_valid": account["is_valid"],
+            "calendars": [],
+        }
+
+        if account["is_valid"]:
+            calendars = fetcher.get_calendars_for_account(account["user_id"])
+            account_info["calendars"] = [
+                {
+                    "id": cal.get("id"),
+                    "name": cal.get("summary", "Unknown"),
+                    "enabled": cal.get("enabled", True),
+                }
+                for cal in calendars
+            ]
+            result["total_calendars"] += len(calendars)
+
+        result["accounts"].append(account_info)
+
+    return result
+
+
+def detect_calendar_conflicts(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    include_all_day: bool = False,
+    conflict_threshold_minutes: int = 15,
+) -> List[Dict[str, Any]]:
+    """Detect calendar conflicts across all connected Google accounts."""
+    if not start_time:
+        start_time = datetime.now()
+    if not end_time:
+        end_time = start_time + timedelta(days=7)  # Next week by default
+
+    events = get_all_calendar_events(start_time=start_time, end_time=end_time)
+
+    analyzer = CalendarAnalyzer()
+    return analyzer.detect_calendar_conflicts(
+        events=events,
+        include_all_day=include_all_day,
+        conflict_threshold_minutes=conflict_threshold_minutes,
+    )
+
+
+# Timezone-aware convenience functions
+
+
+def set_user_timezone(timezone_name: str) -> bool:
+    """Set the user's timezone for all calendar operations.
+
+    Args:
+        timezone_name: IANA timezone name (e.g., 'America/New_York', 'Europe/London')
+
+    Returns:
+        True if timezone was set successfully, False otherwise
+    """
+    try:
+        # Test that the timezone is valid
+        test_tz = ZoneInfo(timezone_name)
+        if hasattr(test_tz, "__call__"):
+            test_tz = test_tz()
+
+        # Create new timezone handler with the specified timezone
+        global _timezone_handler
+        _timezone_handler = TimezoneHandler(timezone_name)
+
+        logger.info(f"User timezone set to: {timezone_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to set timezone {timezone_name}: {e}")
+        return False
+
+
+def get_user_timezone() -> str:
+    """Get the current user timezone setting."""
+    tz_handler = get_timezone_handler()
+    return tz_handler.user_timezone
+
+
+def get_timezone_aware_events(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    convert_to_user_timezone: bool = True,
+    max_results_per_calendar: Optional[int] = None,
+) -> List[CalendarEvent]:
+    """Get calendar events with proper timezone handling.
+
+    Args:
+        start_time: Start time for event search (if naive, assumes user timezone)
+        end_time: End time for event search (if naive, assumes user timezone)
+        convert_to_user_timezone: Whether to convert all event times to user timezone
+        max_results_per_calendar: Maximum results per calendar
+
+    Returns:
+        List of CalendarEvent objects, optionally converted to user timezone
+    """
+    tz_handler = get_timezone_handler()
+
+    # Convert search times to UTC for API calls
+    if start_time and start_time.tzinfo is None:
+        start_time = tz_handler.to_utc(start_time)
+    if end_time and end_time.tzinfo is None:
+        end_time = tz_handler.to_utc(end_time)
+
+    # Get events
+    events = get_all_calendar_events(
+        start_time=start_time,
+        end_time=end_time,
+        max_results_per_calendar=max_results_per_calendar,
+    )
+
+    # Convert to user timezone if requested
+    if convert_to_user_timezone:
+        events = [event.to_user_timezone() for event in events]
+
+    return events
+
+
+def get_current_week_events(
+    convert_to_user_timezone: bool = True,
+) -> List[CalendarEvent]:
+    """Get all events for the current week in user's timezone.
+
+    Args:
+        convert_to_user_timezone: Whether to convert event times to user timezone
+
+    Returns:
+        List of CalendarEvent objects for the current week
+    """
+    tz_handler = get_timezone_handler()
+
+    # Get start and end of current week in user's timezone
+    today = tz_handler.today_in_user_timezone()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59)
+
+    return get_timezone_aware_events(
+        start_time=start_of_week,
+        end_time=end_of_week,
+        convert_to_user_timezone=convert_to_user_timezone,
+    )
+
+
+def get_next_week_events(convert_to_user_timezone: bool = True) -> List[CalendarEvent]:
+    """Get all events for next week in user's timezone.
+
+    Args:
+        convert_to_user_timezone: Whether to convert event times to user timezone
+
+    Returns:
+        List of CalendarEvent objects for next week
+    """
+    tz_handler = get_timezone_handler()
+
+    # Get start and end of next week in user's timezone
+    today = tz_handler.today_in_user_timezone()
+    days_until_next_monday = 7 - today.weekday()
+    next_monday = today + timedelta(days=days_until_next_monday)
+    next_monday = next_monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    end_of_next_week = next_monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
+
+    return get_timezone_aware_events(
+        start_time=next_monday,
+        end_time=end_of_next_week,
+        convert_to_user_timezone=convert_to_user_timezone,
+    )
+
+
+def analyze_availability_timezone_aware(
+    days_ahead: int = 7,
+    working_hours_start: int = 9,
+    working_hours_end: int = 17,
+    include_weekends: bool = False,
+) -> Dict[str, Any]:
+    """Analyze availability with timezone-aware calculations.
+
+    All time calculations are done in the user's local timezone.
+    """
+    tz_handler = get_timezone_handler()
+
+    # Use timezone-aware start and end times
+    start_time = tz_handler.now_in_user_timezone()
+    end_time = start_time + timedelta(days=days_ahead)
+
+    # Get timezone-aware events
+    events = get_timezone_aware_events(
+        start_time=start_time, end_time=end_time, convert_to_user_timezone=True
+    )
+
+    analyzer = CalendarAnalyzer()
+    return analyzer.analyze_availability(
+        events,
+        start_time,
+        end_time,
+        working_hours_start,
+        working_hours_end,
+        include_weekends,
+    )
+
+
+def get_timezone_info() -> Dict[str, Any]:
+    """Get current timezone configuration and status.
+
+    Returns:
+        Dictionary containing timezone information and status
+    """
+    tz_handler = get_timezone_handler()
+
+    try:
+        current_time_utc = datetime.now(timezone.utc)
+        current_time_local = tz_handler.now_in_user_timezone()
+
+        # Calculate offset from UTC
+        offset = current_time_local.utcoffset()
+        offset_hours = offset.total_seconds() / 3600 if offset else 0
+
+        return {
+            "user_timezone": tz_handler.user_timezone,
+            "current_time_utc": current_time_utc.isoformat(),
+            "current_time_local": current_time_local.isoformat(),
+            "utc_offset_hours": offset_hours,
+            "timezone_detected": True,
+            "is_dst": current_time_local.dst() is not None
+            and current_time_local.dst().total_seconds() > 0,
+        }
+    except Exception as e:
+        logger.error(f"Error getting timezone info: {e}")
+        return {
+            "user_timezone": tz_handler.user_timezone,
+            "error": str(e),
+            "timezone_detected": False,
+        }
