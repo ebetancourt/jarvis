@@ -94,7 +94,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 5.8 Create Markdown output formatting for chat interface (FR-022)
   - [x] 5.9 Develop realistic task volume calculation to match user capacity (FR-024)
   - [x] 5.10 Add specific time allocation and scheduling recommendations (FR-025)
-  - [ ] 5.11 Integrate with existing journaling agent tools for journal data access (FR-011)
+  - [x] 5.11 Integrate with existing journaling agent tools for journal data access (FR-011)
   - [ ] 5.12 Implement user-editable weekly_review_rules.md for agent preferences (FR-XXX)
 
 - [ ] 6.0 Implement Database Storage and Historical Tracking

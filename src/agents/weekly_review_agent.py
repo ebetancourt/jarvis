@@ -1218,6 +1218,167 @@ def recommend_time_allocation(
         return f"❌ Error during time allocation recommendation: {e}"
 
 
+@tool
+def extract_journal_insights_for_weekly_review(
+    user_id: str,
+    days_back: int = 7,
+    keywords: list[str] | None = None,
+    mood_list: list[str] | None = None,
+    topic_list: list[str] | None = None,
+) -> str:
+    """
+    Analyze recent journal entries for the past week to extract insights, events, blockers, and suggest possible new tasks for the weekly review.
+
+    Args:
+        user_id: User identifier for authentication
+        days_back: Number of days to look back (default: 7)
+        keywords: List of keywords to extract events/insights (optional)
+        mood_list: List of moods to summarize (optional)
+        topic_list: List of topics to summarize (optional)
+
+    Returns:
+        str: Markdown summary with insights, events, suggested tasks, and mood/theme summary
+    """
+    from datetime import datetime, timedelta
+
+    today = datetime.now().date()
+    start_date = today - timedelta(days=days_back)
+    # Use default lists if not provided
+    if keywords is None:
+        keywords = [
+            "meeting",
+            "deadline",
+            "blocker",
+            "follow up",
+            "review",
+            "plan",
+            "goal",
+            "issue",
+            "success",
+            "problem",
+            "event",
+            "milestone",
+        ]
+    if mood_list is None:
+        mood_list = [
+            "stressed",
+            "anxious",
+            "tired",
+            "overwhelmed",
+            "happy",
+            "grateful",
+            "productive",
+            "motivated",
+            "calm",
+            "excited",
+        ]
+    if topic_list is None:
+        topic_list = [
+            "work",
+            "family",
+            "health",
+            "project",
+            "goal",
+            "relationship",
+            "stress",
+            "energy",
+            "habit",
+            "routine",
+        ]
+    # Extract events/insights
+    events = []
+    for kw in keywords:
+        results = search_by_keywords(kw, search_content=True, search_frontmatter=True)
+        for r in results:
+            if r.get("date") and start_date.strftime("%Y-%m-%d") <= r[
+                "date"
+            ] <= today.strftime("%Y-%m-%d"):
+                events.append({"keyword": kw, "entry": r})
+    # Extract moods
+    mood_counts = {}
+    for mood in mood_list:
+        results = search_by_mood(mood)
+        count = sum(
+            1
+            for r in results
+            if (
+                r.get("date")
+                and start_date.strftime("%Y-%m-%d")
+                <= r["date"]
+                <= today.strftime("%Y-%m-%d")
+            )
+        )
+        if count > 0:
+            mood_counts[mood] = count
+    # Extract topics
+    topic_counts = {}
+    for topic in topic_list:
+        results = search_by_topics(topic)
+        count = sum(
+            1
+            for r in results
+            if (
+                r.get("date")
+                and start_date.strftime("%Y-%m-%d")
+                <= r["date"]
+                <= today.strftime("%Y-%m-%d")
+            )
+        )
+        if count > 0:
+            topic_counts[topic] = count
+    # Suggest possible tasks
+    suggested_tasks = []
+    for e in events:
+        text = e["entry"].get("content", "")
+        if any(
+            word in text.lower()
+            for word in ["follow up", "todo", "should", "need to", "must"]
+        ):
+            suggested_tasks.append(f"- [ ] {text[:80]}...")
+        if "blocker" in e["keyword"] or "issue" in e["keyword"]:
+            suggested_tasks.append(f"- [ ] Address: {text[:80]}...")
+    # Format output
+    output = f"## 📓 Journal Insights for Weekly Review ({start_date} to {today})\n\n"
+    output += "### 📝 Extracted Events & Insights\n"
+    if events:
+        for e in events:
+            entry = e["entry"]
+            output += (
+                f"- {e['keyword'].capitalize()}: "
+                f"{entry.get('content', '')[:80]}... "
+                f"({entry.get('date', '')})\n"
+            )
+    else:
+        output += "No significant events or insights found in journal entries.\n"
+    output += "\n### ✅ Suggested Tasks\n"
+    if suggested_tasks:
+        for t in suggested_tasks:
+            output += t + "\n"
+    else:
+        output += "No actionable tasks identified from journal entries.\n"
+    output += "\n### 😀 Mood & Theme Summary\n"
+    if mood_counts:
+        output += (
+            "**Moods:** "
+            + ", ".join(f"{k} ({v})" for k, v in mood_counts.items())
+            + "\n"
+        )
+    if topic_counts:
+        output += (
+            "**Topics:** "
+            + ", ".join(f"{k} ({v})" for k, v in topic_counts.items())
+            + "\n"
+        )
+    if not (mood_counts or topic_counts):
+        output += "No dominant moods or topics found.\n"
+    output += (
+        "\n*Note: This is a first-pass implementation. "
+        "Future improvements: deeper LLM-based extraction, user feedback, and richer "
+        "journal integration.\n"
+    )
+    return output
+
+
 # Configure tools for the weekly review agent including session management
 tools = [
     # Session management and context tools
@@ -1240,6 +1401,7 @@ tools = [
     resolve_priority_conflicts,
     estimate_task_volume,
     recommend_time_allocation,
+    extract_journal_insights_for_weekly_review,
 ]
 
 current_date = datetime.now().strftime("%Y-%m-%d")
