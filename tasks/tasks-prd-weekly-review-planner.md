@@ -99,10 +99,10 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
 
 - [ ] 6.0 Implement Database Storage and Historical Tracking
   - [x] 6.1 Design database schema for weekly review data storage in `src/schema/weekly_review_models.py`
-  - [ ] 6.2 Create `src/memory/weekly_reviews.py` for database operations (FR-023)
-    _In progress: Implementing database operations module_
-  - [x] 6.3 Implement structured JSON storage for weekly review sessions
-  - [ ] 6.4 Add OAuth configuration and calendar settings persistence
+  - [x] 6.2 Create `src/memory/weekly_reviews.py` for database operations (FR-023)
+  - [ ] 6.3 Implement structured JSON storage for weekly review sessions
+  - [x] 6.4 Add OAuth configuration and calendar settings persistence
+    _Marked complete: User confirmed this is already implemented_
   - [ ] 6.5 Create functionality to reference previous weekly reviews for continuity (FR-005)
   - [ ] 6.6 Implement historical data retrieval and comparison logic
   - [ ] 6.7 Add data migration support for future schema changes
