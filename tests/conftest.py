@@ -1,5 +1,6 @@
 import os
 from unittest.mock import patch
+import tempfile
 
 import pytest
 
@@ -27,3 +28,11 @@ def mock_env():
     """Fixture to ensure environment is clean for each test."""
     with patch.dict(os.environ, {}, clear=True):
         yield
+
+
+@pytest.fixture
+def temp_weekly_reviews_json(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        json_path = os.path.join(tmpdir, "weekly_reviews.json")
+        monkeypatch.setenv("DATABASE_TYPE", "JSON")
+        yield json_path

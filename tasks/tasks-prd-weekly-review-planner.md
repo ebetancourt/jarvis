@@ -97,7 +97,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 5.11 Integrate with existing journaling agent tools for journal data access (FR-011)
   - [x] 5.12 Implement user-editable weekly_review_rules.md for agent preferences (FR-XXX)
 
-- [ ] 6.0 Implement Database Storage and Historical Tracking
+- [x] 6.0 Implement Database Storage and Historical Tracking
   - [x] 6.1 Design database schema for weekly review data storage in `src/schema/weekly_review_models.py`
   - [x] 6.2 Create `src/memory/weekly_reviews.py` for database operations (FR-023)
   - [x] 6.3 Implement structured JSON storage for weekly review sessions
@@ -105,3 +105,4 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 6.5 Create functionality to reference previous weekly reviews for continuity (FR-005)
   - [x] 6.6 Implement historical data retrieval and comparison logic
   - [x] 6.7 Add data migration support for future schema changes
+  - [x] 6.8 Create comprehensive unit tests for all database operations
