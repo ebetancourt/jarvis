@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import re
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
@@ -1377,6 +1378,25 @@ def extract_journal_insights_for_weekly_review(
         "journal integration.\n"
     )
     return output
+
+
+def read_weekly_review_rules_md(filepath: str = "weekly_review_rules.md") -> str:
+    """
+    Read the weekly_review_rules.md file, ignoring HTML-style comments (<!-- ... -->),
+    and return only the user-provided content for agent interpretation.
+    Args:
+        filepath: Path to the rules markdown file (default: project root)
+    Returns:
+        str: Markdown content with comments removed
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Remove HTML-style comments (including multiline)
+        content_no_comments = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+        return content_no_comments.strip()
+    except Exception as e:
+        return f"Could not read rules file: {e}"
 
 
 # Configure tools for the weekly review agent including session management

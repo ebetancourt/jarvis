@@ -83,7 +83,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 4.6 Add timezone handling for user's local timezone
   - [ ] 4.7 Implement OAuth token refresh handling for both Todoist and multiple Google accounts
 
-- [ ] 5.0 Create Weekly Review Logic and Conversational Interface
+- [x] 5.0 Create Weekly Review Logic and Conversational Interface
   - [x] 5.1 Implement core weekly review process following GTD methodology (FR-001, FR-002, FR-003, FR-004)
   - [x] 5.2 Create areas of responsibility and active project review logic
   - [x] 5.3 Develop past week accomplishment identification from tasks and calendar events (FR-014)
@@ -95,7 +95,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 5.9 Develop realistic task volume calculation to match user capacity (FR-024)
   - [x] 5.10 Add specific time allocation and scheduling recommendations (FR-025)
   - [x] 5.11 Integrate with existing journaling agent tools for journal data access (FR-011)
-  - [ ] 5.12 Implement user-editable weekly_review_rules.md for agent preferences (FR-XXX)
+  - [x] 5.12 Implement user-editable weekly_review_rules.md for agent preferences (FR-XXX)
 
 - [ ] 6.0 Implement Database Storage and Historical Tracking
   - [ ] 6.1 Design database schema for weekly review data storage in `src/schema/weekly_review_models.py`
