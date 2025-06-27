@@ -136,3 +136,17 @@ async def delete_weekly_review(session_id: str) -> None:
     else:
         async with get_sqlite_saver() as saver:
             await saver.delete(session_id)
+
+
+async def get_previous_weekly_review(
+    user_id: str, week_start
+) -> Optional[WeeklyReviewSession]:
+    """
+    Retrieve the most recent WeeklyReviewSession for a user before the given week_start
+    date. Returns None if no previous review exists.
+    """
+    reviews = await list_weekly_reviews(user_id)
+    for review in reviews:
+        if review.week_start < week_start:
+            return review
+    return None
