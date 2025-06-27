@@ -84,11 +84,11 @@ def track_review_progress(
 
     for step in completed_list:
         if step in step_names:
-            progress_msg += f"{step_names[step]}\n"
+            progress_msg += f"- [x] {step_names[step]}\n"
 
     if current_step and current_step in step_names:
         current_desc = step_names[current_step].replace("✅", "Working on")
-        progress_msg += f"🔄 Currently: {current_desc}\n"
+        progress_msg += f"- {current_desc}\n"
 
     # Determine next step
     all_steps = ["clear", "current", "creative", "projects", "actions", "calendar"]
@@ -97,9 +97,9 @@ def track_review_progress(
     if next_steps:
         next_step = next_steps[0]
         next_desc = step_names[next_step].replace("✅", "Next -")
-        progress_msg += f"\n🎯 **Next:** {next_desc}"
+        progress_msg += f"- {next_desc}\n"
     else:
-        progress_msg += "\n🎉 **Weekly Review Complete!** Ready to save and wrap up."
+        progress_msg += "\n🎉 **Weekly Review Complete!** Ready to save and wrap up.\n"
 
     if notes:
         progress_msg += f"\n\n📝 **Session Notes:** {notes}"
@@ -223,7 +223,7 @@ def get_past_week_accomplishments(
             for task in completed_tasks:
                 content = task.get("content") or task.get("title") or "Untitled Task"
                 project = task.get("project_id", "")
-                output += f"- {content} (Project: {project})\n"
+                output += f"- [x] {content} (Project: {project})\n"
         else:
             output += "No completed tasks found for this week.\n"
 
@@ -313,7 +313,10 @@ def analyze_incomplete_tasks(user_id: str) -> str:
     output = "## ⏸️ Stalled/Uncompleted Tasks\n\n"
     if unique_stalled_tasks:
         for task in unique_stalled_tasks:
-            output += f"- {task['content']} (Project: {task.get('project_id', '')})\n"
+            # Assume incomplete for stalled tasks
+            output += (
+                f"- [ ] {task['content']} (Project: {task.get('project_id', '')})\n"
+            )
         output += "\nThese tasks have remained incomplete across multiple reviews. Consider prioritizing or re-evaluating them.\n"
     else:
         output += "No stalled or repeatedly uncompleted tasks detected from previous reviews.\n"
@@ -359,14 +362,13 @@ def identify_upcoming_priorities(user_id: str, weeks_ahead: int = 1) -> str:
                 except Exception:
                     pass
         if due_date and now <= due_date <= week_later:
-            due_soon.append(task)
+            high_priority.append(task)
         # Labeled as urgent/important
         for label_id in task.get("labels", []):
             label_name = label_id_to_name.get(label_id, "")
             if "urgent" in label_name or "important" in label_name:
                 urgent_important.append(task)
                 break
-
     # Remove duplicates
     def unique_tasks(task_list):
         seen = set()
@@ -377,7 +379,6 @@ def identify_upcoming_priorities(user_id: str, weeks_ahead: int = 1) -> str:
                 unique.append(t)
                 seen.add(tid)
         return unique
-
     high_priority = unique_tasks(high_priority)
     due_soon = unique_tasks(due_soon)
     urgent_important = unique_tasks(urgent_important)
@@ -386,16 +387,23 @@ def identify_upcoming_priorities(user_id: str, weeks_ahead: int = 1) -> str:
     if high_priority:
         output += "### 🔥 Priority 4 Tasks\n"
         for t in high_priority:
-            output += f"- {t.get('content')} (Project: {t.get('project_id', '')})\n"
+            checked = "[x]" if t.get("is_completed", False) else "[ ]"
+            output += (
+                f"- {checked} {t.get('content')} (Project: {t.get('project_id', '')})\n"
+            )
     if due_soon:
         output += "\n### ⏰ Due Soon (within next week)\n"
         for t in due_soon:
             due = t.get("due", {}).get("date", "")
-            output += f"- {t.get('content')} (Due: {due})\n"
+            checked = "[x]" if t.get("is_completed", False) else "[ ]"
+            output += f"- {checked} {t.get('content')} (Due: {due})\n"
     if urgent_important:
         output += "\n### 🚨 Labeled Urgent/Important\n"
         for t in urgent_important:
-            output += f"- {t.get('content')} (Labels: {t.get('labels', [])})\n"
+            checked = "[x]" if t.get("is_completed", False) else "[ ]"
+            output += (
+                f"- {checked} {t.get('content')} (Labels: {t.get('labels', [])})\n"
+            )
     if not (high_priority or due_soon or urgent_important):
         output += "No high-priority tasks identified for the upcoming week.\n"
     output += (
@@ -687,7 +695,7 @@ def adapt_review_for_sparse_data(
 
     output += "**Adapted Process:**\n"
     for step in adaptation["process"]:
-        output += f"• {step}\n"
+        output += f"- {step}\n"
 
     output += (
         "\nThis approach focuses on what you can control and influence, "
