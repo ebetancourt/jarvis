@@ -98,7 +98,7 @@ Based on the PRD for the Weekly Review and Planner Agent, here is the complete i
   - [x] 5.12 Implement user-editable weekly_review_rules.md for agent preferences (FR-XXX)
 
 - [ ] 6.0 Implement Database Storage and Historical Tracking
-  - [ ] 6.1 Design database schema for weekly review data storage in `src/schema/weekly_review_models.py`
+  - [x] 6.1 Design database schema for weekly review data storage in `src/schema/weekly_review_models.py`
   - [ ] 6.2 Create `src/memory/weekly_reviews.py` for database operations (FR-023)
   - [ ] 6.3 Implement structured JSON storage for weekly review sessions
   - [ ] 6.4 Add OAuth configuration and calendar settings persistence
