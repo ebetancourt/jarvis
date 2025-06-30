@@ -118,7 +118,11 @@ def get_available_agents() -> list:
     """Get list of available agents from the backend."""
     try:
         backend_url = get_backend_url()
-        response = httpx.get(f"{backend_url}/info")
+        headers = {}
+        auth_secret = os.environ.get("AUTH_SECRET")
+        if auth_secret:
+            headers["Authorization"] = f"Bearer {auth_secret}"
+        response = httpx.get(f"{backend_url}/info", headers=headers)
         if response.status_code == 200:
             service_info = response.json()
             return [{"name": agent["key"], "description": agent["description"]} for agent in service_info.get("agents", [])]

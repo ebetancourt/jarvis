@@ -3,14 +3,14 @@ import re
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
-from src.tools.todoist_tools import get_completed_tasks, get_all_tasks, get_all_labels
-from src.tools.calendar_tools import (
+from tools.todoist_tools import get_completed_tasks, get_all_tasks, get_all_labels
+from tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
     get_all_calendar_events,
     detect_calendar_conflicts,
     analyze_upcoming_availability,
 )
-from src.tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
+from tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
 
 
 # Session management and context tools for memory handling
