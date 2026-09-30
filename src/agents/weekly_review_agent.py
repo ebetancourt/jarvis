@@ -3,11 +3,11 @@ from datetime import datetime, timedelta, timezone
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
-from src.tools.todoist_tools import get_completed_tasks, get_all_tasks
-from src.tools.calendar_tools import (
+from tools.todoist_tools import get_completed_tasks, get_all_tasks
+from tools.calendar_tools import (
     get_past_week_accomplishments as get_calendar_accomplishments,
 )
-from src.tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
+from tools.journal_tools import search_by_keywords, search_by_mood, search_by_topics
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -221,31 +221,31 @@ def get_past_week_accomplishments(
             from src.tools.calendar_tools import CalendarDataFetcher, CalendarAnalyzer
             fetcher = CalendarDataFetcher()
             analyzer = CalendarAnalyzer()
-            
+
             # Get events from past week
             calendar_events = []
             week_start_dt = datetime.combine(week_start, datetime.min.time()).replace(tzinfo=timezone.utc)
             week_end_dt = datetime.combine(week_end, datetime.min.time()).replace(tzinfo=timezone.utc)
-            
+
             # Get all calendar events for this user's accounts
             accounts = fetcher.get_all_google_accounts()
             user_accounts = [acc for acc in accounts if acc['user_id'] == user_id and acc['is_valid']]
-            
+
             if user_accounts:
                 for account in user_accounts:
                     calendars = fetcher.get_calendars_for_account(account['user_id'])
                     for calendar in calendars:
                         events = fetcher.fetch_events_from_calendar(
-                            account['user_id'], 
-                            calendar.get('id'), 
-                            week_start_dt, 
-                            week_end_dt
+                            account["user_id"],
+                            calendar.get("id"),
+                            week_start_dt,
+                            week_end_dt,
                         )
                         calendar_events.extend(events)
-                
+
                 # Filter to accomplishments
                 calendar_events = analyzer.get_past_week_accomplishments(calendar_events)
-            
+
         except Exception as e:
             logger.warning(f"Error fetching calendar accomplishments: {e}")
             calendar_events = []
